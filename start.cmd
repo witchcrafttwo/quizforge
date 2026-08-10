@@ -47,10 +47,12 @@ if not exist "node_modules" (
   )
 )
 
-rem --- ビルド（成果物が無いときだけ） ---
+rem --- ビルドが必要か判定 ---
+rem 成果物の有無だけでなくソースの更新時刻とも比べる。
+rem 古い dist を含むフォルダーをコピーしてきた場合に取りこぼさないため。
 set NEED_BUILD=0
-if not exist "server\dist\local.js" set NEED_BUILD=1
-if not exist "web\dist\index.html" set NEED_BUILD=1
+node scripts\needs-build.mjs
+if errorlevel 1 set NEED_BUILD=1
 if /i "%~1"=="rebuild" set NEED_BUILD=1
 
 if "%NEED_BUILD%"=="1" (
@@ -73,7 +75,6 @@ echo.
 
 node server\dist\local.js
 
-rem サーバーが落ちた場合はここに来る
 echo.
 echo サーバーが停止しました。
 goto :fail
