@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { ZodError } from 'zod';
@@ -7,12 +10,15 @@ import {
   AuthError,
   adminAccountConfigured,
   checkSignupCode,
+  clearFailures,
   clearSessionCookie,
   createSession,
   createUser,
   currentUser,
   destroySession,
+  guardAttempts,
   login,
+  recordFailure,
   readSessionCookie,
   requireAdmin,
   requireUser,
@@ -42,8 +48,32 @@ import {
 
 // 認証はセッションクッキー。インターネットに公開する場合は HTTPS 必須で、
 // COOKIE_SECURE=1 を立ててクッキーに Secure を付けること。
+/**
+ * フロントのビルド成果物の場所を決める。
+ * WEB_DIST があればそれを、無ければ server/dist から見た ../../web/dist を使う。
+ * 存在しなければ null を返し、静的配信を行わない（開発時は Vite が担当）。
+ */
+function resolveWebDist(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidate = process.env.WEB_DIST
+    ? path.resolve(process.env.WEB_DIST)
+    : path.resolve(here, '../../web/dist');
+
+  if (!existsSync(path.join(candidate, 'index.html'))) {
+    console.warn(`[web] ${candidate} が見つかりません。API のみで起動します。`);
+    return null;
+  }
+  console.log(`web  : ${candidate}`);
+  return candidate;
+}
+
 export function createApp() {
   const app = express();
+
+  // Cloudflare Tunnel（cloudflared）はローカルへ http で転送してくるので、
+  // X-Forwarded-Proto と X-Forwarded-For を信頼しないと
+  // 「HTTPS なのに http 扱い」「全員のIPが 127.0.0.1」になる。
+  app.set('trust proxy', Number(process.env.TRUST_PROXY ?? 1));
 
   // クッキーを使うので、別オリジンから叩く場合は資格情報付きを許可する。
   const origin = process.env.CORS_ORIGIN;
@@ -73,21 +103,51 @@ export function createApp() {
   app.post(
     '/api/auth/signup',
     wrap(async (req, res) => {
-      const { username, password, signupCode } = signupSchema.parse(req.body);
-      checkSignupCode(signupCode);
-      const user = await createUser(username, password);
-      setSessionCookie(res, await createSession(user.id));
-      res.status(201).json({ user });
+      // 招待コードの総当たりを防ぐため、入力検証より前に IP 単位で制限する。
+      const key = `signup:${req.ip}`;
+      guardAttempts(key);
+      try {
+        const { username, password, signupCode } = signupSchema.parse(req.body);
+        checkSignupCode(signupCode);
+        const user = await createUser(username, password);
+        clearFailures(key);
+        setSessionCookie(req, res, await createSession(user.id));
+        res.status(201).json({ user });
+      } catch (error) {
+        recordFailure(key);
+        throw error;
+      }
     }),
   );
 
   app.post(
     '/api/auth/login',
     wrap(async (req, res) => {
-      const { username, password } = credentialsSchema.parse(req.body);
-      const user = await login(username, password);
-      setSessionCookie(res, await createSession(user.id));
-      res.json({ user });
+      // IP の判定は入力検証より前に行う。不正な形のリクエストを投げ続けるだけで
+      // 制限を回避できてしまうため。
+      const ipKey = `login-ip:${req.ip}`;
+      guardAttempts(ipKey);
+
+      let username = '';
+      try {
+        const parsed = credentialsSchema.parse(req.body);
+        username = parsed.username;
+
+        // ユーザー名単位でも制限する。IP だけだと共有回線の正当な利用を巻き込み、
+        // ユーザー名だけだと IP を変えて狙い撃ちされる。
+        const userKey = `login-user:${username.toLowerCase()}`;
+        guardAttempts(userKey);
+
+        const user = await login(username, parsed.password);
+        clearFailures(ipKey);
+        clearFailures(userKey);
+        setSessionCookie(req, res, await createSession(user.id));
+        res.json({ user });
+      } catch (error) {
+        recordFailure(ipKey);
+        if (username) recordFailure(`login-user:${username.toLowerCase()}`);
+        throw error;
+      }
     }),
   );
 
@@ -96,7 +156,7 @@ export function createApp() {
     wrap(async (req, res) => {
       const token = readSessionCookie(req);
       if (token) await destroySession(token);
-      clearSessionCookie(res);
+      clearSessionCookie(req, res);
       res.status(204).end();
     }),
   );
@@ -712,6 +772,41 @@ export function createApp() {
       res.status(204).end();
     }),
   );
+
+  /* ---------- フロントの配信（本番） ---------- */
+
+  // WEB_DIST を静的配信し、/library や /admin では index.html を返す（SPA フォールバック）。
+  // 開発時は Vite が受け持つので、ビルド成果物が無ければ何もしない。
+  const webDist = resolveWebDist();
+  if (webDist) {
+    const indexHtml = path.join(webDist, 'index.html');
+
+    app.use(
+      express.static(webDist, {
+        index: false,
+        setHeaders(res, filePath) {
+          const name = path.basename(filePath);
+          // index.html と Service Worker を長期キャッシュすると更新が届かなくなる。
+          if (name === 'index.html' || name === 'sw.js' || name.endsWith('.webmanifest')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          } else if (/-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(name)) {
+            // Vite は index-B82D7KFU.js のようにハッシュを付ける。内容が変われば
+            // 名前も変わるので、長期キャッシュして構わない。
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      }),
+    );
+
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        next();
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(indexHtml);
+    });
+  }
 
   /* ---------- エラー処理 ---------- */
 

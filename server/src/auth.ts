@@ -87,26 +87,70 @@ async function userForToken(token: string): Promise<UserRow | undefined> {
 
 /* ---------- クッキー ---------- */
 
-// HTTPS 配信時は COOKIE_SECURE=1 を立てる。localhost の http では付けられない。
-const cookieSecure = process.env.COOKIE_SECURE === '1';
+/**
+ * Secure 属性を付けるか。COOKIE_SECURE=1 で強制でき、指定が無くても
+ * Cloudflare Tunnel 経由（X-Forwarded-Proto: https）なら自動で付ける。
+ * 環境変数の付け忘れでクッキーが平文で飛ぶのを防ぐため。
+ */
+function useSecureCookie(req: Request): boolean {
+  if (process.env.COOKIE_SECURE === '1') return true;
+  if (process.env.COOKIE_SECURE === '0') return false;
+  return req.secure || req.headers['x-forwarded-proto'] === 'https';
+}
 
-export function setSessionCookie(res: Response, token: string): void {
-  const maxAge = SESSION_DAYS * 24 * 60 * 60;
+function cookieParts(req: Request, value: string, maxAge: number): string {
   const parts = [
-    `${SESSION_COOKIE}=${token}`,
+    `${SESSION_COOKIE}=${value}`,
     'HttpOnly',
     'Path=/',
     'SameSite=Lax',
     `Max-Age=${maxAge}`,
   ];
-  if (cookieSecure) parts.push('Secure');
-  res.setHeader('Set-Cookie', parts.join('; '));
+  if (useSecureCookie(req)) parts.push('Secure');
+  return parts.join('; ');
 }
 
-export function clearSessionCookie(res: Response): void {
-  const parts = [`${SESSION_COOKIE}=`, 'HttpOnly', 'Path=/', 'SameSite=Lax', 'Max-Age=0'];
-  if (cookieSecure) parts.push('Secure');
-  res.setHeader('Set-Cookie', parts.join('; '));
+export function setSessionCookie(req: Request, res: Response, token: string): void {
+  res.setHeader('Set-Cookie', cookieParts(req, token, SESSION_DAYS * 24 * 60 * 60));
+}
+
+export function clearSessionCookie(req: Request, res: Response): void {
+  res.setHeader('Set-Cookie', cookieParts(req, '', 0));
+}
+
+/* ---------- 総当たり対策 ---------- */
+
+// プロセス内のみの簡易カウンタ。多重起動するなら Postgres か Redis へ移す。
+const failures = new Map<string, { count: number; until: number }>();
+const MAX_ATTEMPTS = 10;
+const WINDOW_MS = 15 * 60 * 1000;
+
+/** ログイン・登録の前に呼ぶ。試行が多すぎれば例外を投げる。 */
+export function guardAttempts(key: string): void {
+  const state = failures.get(key);
+  if (!state) return;
+  if (state.until < Date.now()) {
+    failures.delete(key);
+    return;
+  }
+  if (state.count >= MAX_ATTEMPTS) {
+    const minutes = Math.ceil((state.until - Date.now()) / 60000);
+    throw new AuthError(`試行回数が多すぎます。${minutes} 分後に再試行してください。`, 429);
+  }
+}
+
+export function recordFailure(key: string): void {
+  const now = Date.now();
+  const state = failures.get(key);
+  if (!state || state.until < now) {
+    failures.set(key, { count: 1, until: now + WINDOW_MS });
+    return;
+  }
+  state.count += 1;
+}
+
+export function clearFailures(key: string): void {
+  failures.delete(key);
 }
 
 export function readSessionCookie(req: Request): string | null {
