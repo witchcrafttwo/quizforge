@@ -1,49 +1,49 @@
 @echo off
-chcp 65001 > nul
+rem ‚±‚Ìƒtƒ@ƒCƒ‹‚Í Shift-JIS(CP932) ‚Å•Û‘¶‚·‚é‚±‚ÆB
 setlocal
 
 cd /d "%~dp0"
-title QuizForge (é–‹ç™º)
+title QuizForge (ŠJ”­)
 
 echo ============================================
-echo  QuizForge ã‚’é–‹ç™ºãƒ¢ãƒ¼ãƒ‰ã§èµ·å‹•ã—ã¾ã™
-echo  ã‚½ãƒ¼ã‚¹ã‚’ä¿å­˜ã™ã‚‹ã¨è‡ªå‹•ã§åæ˜ ã•ã‚Œã¾ã™
+echo  QuizForge ‚ðŠJ”­ƒ‚[ƒh‚Å‹N“®‚µ‚Ü‚·
+echo  ƒ\[ƒX‚ð•Û‘¶‚·‚é‚ÆŽ©“®‚Å”½‰f‚³‚ê‚Ü‚·
 echo ============================================
 echo.
 
 where node > nul 2>&1
 if errorlevel 1 (
-  echo [ã‚¨ãƒ©ãƒ¼] Node.js ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚
+  echo [ƒGƒ‰[] Node.js ‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB
   goto :fail
 )
 
 if not exist ".env" (
   copy /y ".env.example" ".env" > nul
-  echo [ã‚¨ãƒ©ãƒ¼] .env ã‚’ä½œæˆã—ã¾ã—ãŸã€‚ä¸­èº«ã‚’åŸ‹ã‚ã¦ã‹ã‚‰èµ·å‹•ã—ã¦ãã ã•ã„ã€‚
+  echo [ƒGƒ‰[] .env ‚ðì¬‚µ‚Ü‚µ‚½B’†g‚ð–„‚ß‚Ä‚©‚ç‹N“®‚µ‚Ä‚­‚¾‚³‚¢B
   goto :fail
 )
 
 if not exist "node_modules" (
-  echo ä¾å­˜ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã‚’å–å¾—ã—ã¦ã„ã¾ã™...
+  echo ˆË‘¶ƒpƒbƒP[ƒW‚ðŽæ“¾‚µ‚Ä‚¢‚Ü‚·...
   call npm install
   if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] npm install ã«å¤±æ•—ã—ã¾ã—ãŸã€‚
+    echo [ƒGƒ‰[] npm install ‚ÉŽ¸”s‚µ‚Ü‚µ‚½B
     goto :fail
   )
 )
 
 echo.
 echo --------------------------------------------
-echo  ç”»é¢ http://localhost:5173
+echo  ‰æ–Ê http://localhost:5173
 echo  API  http://localhost:8787
-echo  æ­¢ã‚ã‚‹ã¨ãã¯ Ctrl + C
+echo  ’âŽ~‚Í Ctrl + C
 echo --------------------------------------------
 echo.
 
 call npm run dev
 
 echo.
-echo åœæ­¢ã—ã¾ã—ãŸã€‚
+echo ’âŽ~‚µ‚Ü‚µ‚½B
 goto :fail
 
 :fail

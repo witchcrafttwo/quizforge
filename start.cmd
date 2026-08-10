@@ -1,52 +1,53 @@
 @echo off
-chcp 65001 > nul
+rem ‚±‚Ìƒtƒ@ƒCƒ‹‚Í Shift-JIS(CP932) ‚Å•Û‘¶‚·‚é‚±‚ÆB
+rem UTF-8 ‚¾‚Æ cmd ‚ª“ú–{Œê‚ÌƒoƒCƒg—ñ‚ðŒë‰ðŽß‚µ‚Äs‚ª‰ó‚ê‚éB
 setlocal
 
-rem ã“ã®ãƒãƒƒãƒãŒç½®ã‹ã‚Œã¦ã„ã‚‹ãƒ•ã‚©ãƒ«ãƒ€ãƒ¼ã§å‹•ã‹ã™ï¼ˆãƒ€ãƒ–ãƒ«ã‚¯ãƒªãƒƒã‚¯å¯¾å¿œï¼‰
+rem ‚±‚Ìƒtƒ@ƒCƒ‹‚ª’u‚©‚ê‚Ä‚¢‚éƒtƒHƒ‹ƒ_[‚Å“®‚©‚·iƒ_ƒuƒ‹ƒNƒŠƒbƒN‘Î‰žj
 cd /d "%~dp0"
 
 title QuizForge
 
 echo ============================================
-echo  QuizForge ã‚’èµ·å‹•ã—ã¾ã™
+echo  QuizForge ‚ð‹N“®‚µ‚Ü‚·
 echo ============================================
 echo.
 
-rem --- Node.js ã®ç¢ºèª ---
+rem --- Node.js ‚ÌŠm”F ---
 where node > nul 2>&1
 if errorlevel 1 (
-  echo [ã‚¨ãƒ©ãƒ¼] Node.js ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚
-  echo          https://nodejs.org ã‹ã‚‰ Node.js 20 ä»¥ä¸Šã‚’å…¥ã‚Œã¦ãã ã•ã„ã€‚
+  echo [ƒGƒ‰[] Node.js ‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB
+  echo          https://nodejs.org ‚©‚ç Node.js 20 ˆÈã‚ð“ü‚ê‚Ä‚­‚¾‚³‚¢B
   goto :fail
 )
 for /f "delims=" %%v in ('node -v') do echo Node.js %%v
 
-rem --- .env ã®ç¢ºèª ---
+rem --- .env ‚ÌŠm”F ---
 if not exist ".env" (
   echo.
-  echo [ã‚¨ãƒ©ãƒ¼] .env ãŒã‚ã‚Šã¾ã›ã‚“ã€‚.env.example ã‚’ã‚³ãƒ”ãƒ¼ã—ã¦ä½œæˆã—ã¾ã—ãŸã€‚
+  echo [ƒGƒ‰[] .env ‚ª‚ ‚è‚Ü‚¹‚ñB.env.example ‚ðƒRƒs[‚µ‚Äì¬‚µ‚Ü‚µ‚½B
   copy /y ".env.example" ".env" > nul
-  echo          .env ã‚’é–‹ã„ã¦æ¬¡ã®é …ç›®ã‚’åŸ‹ã‚ã¦ã‹ã‚‰ã€ã‚‚ã†ä¸€åº¦èµ·å‹•ã—ã¦ãã ã•ã„ã€‚
-  echo            AWS_BEARER_TOKEN_BEDROCK  Bedrock ã® API ã‚­ãƒ¼
-  echo            DATABASE_URL              Postgres ã®æŽ¥ç¶šå…ˆ
-  echo            SIGNUP_CODE               æ–°è¦ç™»éŒ²ã«ä½¿ã†æ‹›å¾…ã‚³ãƒ¼ãƒ‰
-  echo            ADMIN_USERNAME            ç®¡ç†è€…ã‚¢ã‚«ã‚¦ãƒ³ãƒˆå
-  echo            ADMIN_PASSWORD            ç®¡ç†è€…ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰
+  echo          .env ‚ðŠJ‚¢‚ÄŽŸ‚Ì€–Ú‚ð–„‚ß‚Ä‚©‚çA‚à‚¤ˆê“x‹N“®‚µ‚Ä‚­‚¾‚³‚¢B
+  echo            AWS_BEARER_TOKEN_BEDROCK  Bedrock ‚Ì API ƒL[
+  echo            DATABASE_URL              Postgres ‚ÌÚ‘±æ
+  echo            SIGNUP_CODE               V‹K“o˜^‚ÉŽg‚¤µ‘ÒƒR[ƒh
+  echo            ADMIN_USERNAME            ŠÇ—ŽÒƒAƒJƒEƒ“ƒg–¼
+  echo            ADMIN_PASSWORD            ŠÇ—ŽÒƒpƒXƒ[ƒh
   goto :fail
 )
 
-rem --- ä¾å­˜ã®ã‚¤ãƒ³ã‚¹ãƒˆãƒ¼ãƒ«ï¼ˆåˆå›žã®ã¿ï¼‰ ---
+rem --- ˆË‘¶‚ÌƒCƒ“ƒXƒg[ƒ‹i‰‰ñ‚Ì‚Ýj ---
 if not exist "node_modules" (
   echo.
-  echo ä¾å­˜ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã‚’å–å¾—ã—ã¦ã„ã¾ã™ã€‚åˆå›žã¯æ•°åˆ†ã‹ã‹ã‚Šã¾ã™...
+  echo ˆË‘¶ƒpƒbƒP[ƒW‚ðŽæ“¾‚µ‚Ä‚¢‚Ü‚·B‰‰ñ‚Í”•ª‚©‚©‚è‚Ü‚·...
   call npm ci
   if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] npm ci ã«å¤±æ•—ã—ã¾ã—ãŸã€‚
+    echo [ƒGƒ‰[] npm ci ‚ÉŽ¸”s‚µ‚Ü‚µ‚½B
     goto :fail
   )
 )
 
-rem --- ãƒ“ãƒ«ãƒ‰ï¼ˆæˆæžœç‰©ãŒç„¡ã„ã¨ãã ã‘ï¼‰ ---
+rem --- ƒrƒ‹ƒhi¬‰Ê•¨‚ª–³‚¢‚Æ‚«‚¾‚¯j ---
 set NEED_BUILD=0
 if not exist "server\dist\local.js" set NEED_BUILD=1
 if not exist "web\dist\index.html" set NEED_BUILD=1
@@ -54,27 +55,27 @@ if /i "%~1"=="rebuild" set NEED_BUILD=1
 
 if "%NEED_BUILD%"=="1" (
   echo.
-  echo ãƒ“ãƒ«ãƒ‰ã—ã¦ã„ã¾ã™...
+  echo ƒrƒ‹ƒh‚µ‚Ä‚¢‚Ü‚·...
   call npm run build
   if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ãƒ“ãƒ«ãƒ‰ã«å¤±æ•—ã—ã¾ã—ãŸã€‚
+    echo [ƒGƒ‰[] ƒrƒ‹ƒh‚ÉŽ¸”s‚µ‚Ü‚µ‚½B
     goto :fail
   )
 )
 
-rem --- èµ·å‹• ---
+rem --- ‹N“® ---
 echo.
 echo --------------------------------------------
-echo  http://localhost:8787 ã§é–‹ã‘ã¾ã™
-echo  æ­¢ã‚ã‚‹ã¨ãã¯ ã“ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã§ Ctrl + C
+echo  http://localhost:8787 ‚ÅŠJ‚¯‚Ü‚·
+echo  ’âŽ~‚Í Ctrl + C
 echo --------------------------------------------
 echo.
 
 node server\dist\local.js
 
-rem ã‚µãƒ¼ãƒãƒ¼ãŒè½ã¡ãŸå ´åˆã¯ã“ã“ã«æ¥ã‚‹
+rem ƒT[ƒo[‚ª—Ž‚¿‚½ê‡‚Í‚±‚±‚É—ˆ‚é
 echo.
-echo ã‚µãƒ¼ãƒãƒ¼ãŒåœæ­¢ã—ã¾ã—ãŸã€‚
+echo ƒT[ƒo[‚ª’âŽ~‚µ‚Ü‚µ‚½B
 goto :fail
 
 :fail

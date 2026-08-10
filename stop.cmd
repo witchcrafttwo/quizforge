@@ -1,24 +1,24 @@
 @echo off
-chcp 65001 > nul
+rem ‚±‚Ìƒtƒ@ƒCƒ‹‚Í Shift-JIS(CP932) ‚Å•Û‘¶‚·‚é‚±‚ÆB
 setlocal enabledelayedexpansion
 
-rem 8787ï¼ˆAPIï¼‰ã¨ 5173ï¼ˆé–‹ç™ºã‚µãƒ¼ãƒãƒ¼ï¼‰ã‚’æŽ´ã‚“ã§ã„ã‚‹ãƒ—ãƒ­ã‚»ã‚¹ã ã‘ã‚’æ­¢ã‚ã‚‹ã€‚
-rem taskkill /IM node.exe ã ã¨ç„¡é–¢ä¿‚ãª Node ã¾ã§å·»ãè¾¼ã‚€ãŸã‚ä½¿ã‚ãªã„ã€‚
+rem 8787iAPIj‚Æ 5173iŠJ”­ƒT[ƒo[j‚ð’Í‚ñ‚Å‚¢‚éƒvƒƒZƒX‚¾‚¯‚ðŽ~‚ß‚éB
+rem taskkill /IM node.exe ‚¾‚Æ–³ŠÖŒW‚È Node ‚Ü‚ÅŠª‚«ž‚Þ‚½‚ßŽg‚í‚È‚¢B
 
 set FOUND=0
 
 for %%P in (8787 5173) do (
   for /f "tokens=5" %%I in ('netstat -ano ^| findstr /r /c:":%%P .*LISTENING"') do (
-    echo ãƒãƒ¼ãƒˆ %%P ã‚’ä½¿ç”¨ä¸­ã® PID %%I ã‚’åœæ­¢ã—ã¾ã™
+    echo ƒ|[ƒg %%P ‚ðŽg—p’†‚Ì PID %%I ‚ð’âŽ~‚µ‚Ü‚·
     taskkill /f /pid %%I > nul 2>&1
     if not errorlevel 1 set FOUND=1
   )
 )
 
 if "!FOUND!"=="0" (
-  echo èµ·å‹•ä¸­ã®ã‚µãƒ¼ãƒãƒ¼ã¯è¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã§ã—ãŸã€‚
+  echo ‹N“®’†‚ÌƒT[ƒo[‚ÍŒ©‚Â‚©‚è‚Ü‚¹‚ñ‚Å‚µ‚½B
 ) else (
-  echo åœæ­¢ã—ã¾ã—ãŸã€‚
+  echo ’âŽ~‚µ‚Ü‚µ‚½B
 )
 
 echo.
