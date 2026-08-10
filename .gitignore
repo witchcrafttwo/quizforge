@@ -1,0 +1,55 @@
+# 依存
+node_modules/
+.npm/
+.pnpm-store/
+
+# ビルド成果物
+dist/
+build/
+*.tsbuildinfo
+
+# vite-plugin-pwa が開発時に吐くもの
+dev-dist/
+
+# 秘密情報。.env には Bedrock API キーと DB パスワードが入るので絶対に含めない
+.env
+.env.*
+!.env.example
+
+# AWS の資格情報を誤って置いた場合の保険
+.aws/
+credentials
+*.pem
+*.key
+!server/src/**/*.key.ts
+
+# ログ
+*.log
+npm-debug.log*
+logs/
+
+# データベースのダンプ・バックアップ
+*.sql.gz
+*.dump
+*.bak
+backup/
+
+# 検証用の使い捨てスクリプトや出力
+tmp-*
+*.tmp
+out.txt
+err.txt
+
+# テスト・カバレッジ
+coverage/
+.nyc_output/
+
+# エディタ・OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

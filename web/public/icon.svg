@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="QuizForge">
+  <rect width="512" height="512" rx="96" fill="#0f172a" />
+  <g fill="none" stroke="#38bdf8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 112h152l56 56v232a24 24 0 0 1-24 24H176a24 24 0 0 1-24-24V136a24 24 0 0 1 24-24z" />
+    <path d="M300 112v64h60" />
+  </g>
+  <text x="256" y="330" font-family="system-ui, sans-serif" font-size="150" font-weight="700" fill="#f8fafc" text-anchor="middle">?</text>
+  <circle cx="256" cy="372" r="14" fill="#38bdf8" />
+</svg>
