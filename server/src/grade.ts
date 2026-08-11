@@ -1,6 +1,7 @@
 import type { Tool } from '@aws-sdk/client-bedrock-runtime';
 import { z } from 'zod';
-import { GRADER_MODEL_ID, converseForJson, type TokenUsage } from './bedrock.js';
+import { converseForJson, type TokenUsage } from './bedrock.js';
+import { modelFor } from './modelConfig.js';
 import { graderSystemPrompt } from './prompts.js';
 import type { GradeRequest, GradeResult } from './types.js';
 
@@ -64,7 +65,7 @@ export async function gradeShortAnswers(
   if (request.items.length === 0) return { results: [], usage: null };
 
   const { data: raw, usage } = await converseForJson<unknown>({
-    modelId: GRADER_MODEL_ID,
+    modelId: modelFor('grader'),
     system: graderSystemPrompt(request.language),
     content: [{ text: `以下の ${request.items.length} 件を採点してください。\n\n${renderItems(request)}` }],
     tool: submitGradesTool,

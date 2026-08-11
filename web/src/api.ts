@@ -340,6 +340,30 @@ export const adminUsers = (days: number) =>
 export const adminSetDisabled = (id: string, disabled: boolean) =>
   post<{ disabled: boolean }>(`/api/admin/users/${id}/disabled`, { disabled });
 
+export type ModelRole = 'generate' | 'grader' | 'explainer';
+
+export interface ModelOption {
+  id: string;
+  provider: string;
+  inputModalities: string[];
+  profileOnly: boolean;
+}
+
+export interface ModelSettings {
+  current: Record<ModelRole, string>;
+  defaults: Record<ModelRole, string>;
+  options: ModelOption[];
+}
+
+export const adminModels = () => request<ModelSettings>('/api/admin/models');
+
+/** modelId に null を渡すと .env の既定値へ戻る。 */
+export const adminSetModel = (role: ModelRole, modelId: string | null) =>
+  request<ModelSettings>(`/api/admin/models/${role}`, {
+    method: 'PUT',
+    body: JSON.stringify({ modelId }),
+  });
+
 export const adminUpdatePrice = (modelId: string, inputPer1m: number, outputPer1m: number) =>
   request<ModelPrice>(`/api/admin/prices/${encodeURIComponent(modelId)}`, {
     method: 'PUT',

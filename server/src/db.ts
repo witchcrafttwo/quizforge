@@ -245,6 +245,14 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS jobs_user_idx ON jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs (status, created_at);
 
+-- 管理画面から変えられる設定。値が無い項目は環境変数を使う。
+-- key: 'model.generate' / 'model.grader' / 'model.explainer'
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        text PRIMARY KEY,
+  value      text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- モデルごとの単価（USD / 100万トークン）。0 のままだとコストを計算しない。
 -- 実際の単価は AWS の料金ページで確認して管理画面から入れる。
 CREATE TABLE IF NOT EXISTS model_prices (

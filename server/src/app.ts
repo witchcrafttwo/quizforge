@@ -30,6 +30,7 @@ import * as repo from './repo.js';
 import { generateQuiz, generateReplacement } from './quiz.js';
 import * as folders from './folders.js';
 import * as jobs from './jobs.js';
+import * as modelConfig from './modelConfig.js';
 import * as plans from './plans.js';
 import * as sharing from './sharing.js';
 import {
@@ -38,6 +39,7 @@ import {
   generateRequestSchema,
   groupNameSchema,
   modelPriceSchema,
+  modelRoleSchema,
   planLimitsSchema,
   questionMarkSchema,
   quizTitleSchema,
@@ -748,6 +750,32 @@ export function createApp() {
         return;
       }
       res.json({ planId });
+    }),
+  );
+
+  /** 使用モデルの確認と切り替え。空文字を送ると環境変数の値に戻る。 */
+  app.get(
+    '/api/admin/models',
+    requireAdmin,
+    wrap(async (_req, res) => {
+      const options = await modelConfig.listModelOptions().catch((error: unknown) => {
+        console.error('[models] 一覧の取得に失敗', error);
+        return [];
+      });
+      res.json({ ...modelConfig.modelSettings(), options });
+    }),
+  );
+
+  app.put(
+    '/api/admin/models/:role',
+    requireAdmin,
+    wrap(async (req, res) => {
+      const { role, modelId } = modelRoleSchema.parse({
+        role: req.params.role,
+        modelId: req.body?.modelId ?? null,
+      });
+      await modelConfig.setModel(role, modelId);
+      res.json(modelConfig.modelSettings());
     }),
   );
 

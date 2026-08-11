@@ -8,15 +8,28 @@ interface Props {
 
 const PERIODS = [1, 7, 30, 90];
 
-type AdminTab = 'overview' | 'users' | 'quizzes' | 'plans' | 'prices';
+type AdminTab = 'overview' | 'users' | 'quizzes' | 'models' | 'plans' | 'prices';
 
 const ADMIN_TABS: { key: AdminTab; label: string }[] = [
   { key: 'overview', label: '概要' },
   { key: 'users', label: 'ユーザー' },
   { key: 'quizzes', label: '配布' },
+  { key: 'models', label: 'AI' },
   { key: 'plans', label: 'プラン' },
   { key: 'prices', label: '単価' },
 ];
+
+const ROLE_LABEL: Record<api.ModelRole, string> = {
+  generate: '作問',
+  grader: '記述式の採点',
+  explainer: 'AI解説',
+};
+
+const ROLE_NOTE: Record<api.ModelRole, string> = {
+  generate: '資料（PDF・Word・画像）を読む必要があるため、document と image に対応したモデルを選ぶこと。Claude 系のみ確認済み。',
+  grader: '構造化出力（tool use）が必要。Gemma 3 は非対応。',
+  explainer: '平文で返すだけなので、ほとんどのモデルで動く。',
+};
 
 function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
@@ -177,6 +190,7 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
   const [users, setUsers] = useState<api.AdminUserRow[]>([]);
   const [quizzes, setQuizzes] = useState<api.AdminQuizRow[]>([]);
   const [sharing, setSharing] = useState<api.SharingData | null>(null);
+  const [models, setModels] = useState<api.ModelSettings | null>(null);
   const [newGroup, setNewGroup] = useState('');
   const [target, setTarget] = useState('');
   const [audience, setAudience] = useState('');
@@ -187,16 +201,18 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const [o, u, q, s] = await Promise.all([
+      const [o, u, q, s, m] = await Promise.all([
         api.adminOverview(days),
         api.adminUsers(days),
         api.adminQuizzes(),
         api.adminSharing(),
+        api.adminModels(),
       ]);
       setOverview(o);
       setUsers(u);
       setQuizzes(q);
       setSharing(s);
+      setModels(m);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -552,6 +568,61 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
             )}
           </section>
         </>
+      )}
+
+      {adminTab === 'models' && models && (
+        <section className="card">
+          <h2 className="tight">使用するモデル</h2>
+          <p className="subtle">
+            切り替えは即座に反映されます。用途ごとに必要な機能が違うので注意してください。
+          </p>
+
+          {(['generate', 'grader', 'explainer'] as api.ModelRole[]).map((role) => {
+            const current = models.current[role];
+            const isDefault = current === models.defaults[role];
+            return (
+              <div key={role} className="card nested">
+                <div className="row between">
+                  <strong>{ROLE_LABEL[role]}</strong>
+                  {isDefault && <span className="badge">.env の既定値</span>}
+                </div>
+                <p className="stat">{ROLE_NOTE[role]}</p>
+
+                <select
+                  aria-label={`${ROLE_LABEL[role]} のモデル`}
+                  value={current}
+                  onChange={(event) =>
+                    void act(() => api.adminSetModel(role, event.target.value))
+                  }
+                >
+                  {/* 現在の値が一覧に無い場合でも選択状態を保てるようにする */}
+                  {!models.options.some((o) => o.id === current) && (
+                    <option value={current}>{current}</option>
+                  )}
+                  {models.options.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.id}
+                      {option.inputModalities.includes('IMAGE') ? ' ・画像可' : ''}
+                      {option.profileOnly ? ' ・プロファイル必須' : ''}
+                    </option>
+                  ))}
+                </select>
+
+                {!isDefault && (
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => void act(() => api.adminSetModel(role, null))}
+                    >
+                      .env の既定値（{models.defaults[role]}）に戻す
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </section>
       )}
 
       {adminTab === 'prices' && overview && overview.prices.length > 0 && (

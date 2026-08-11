@@ -1,4 +1,5 @@
-import { EXPLAINER_MODEL_ID, converseForText, type TokenUsage } from './bedrock.js';
+import { converseForText, type TokenUsage } from './bedrock.js';
+import { modelFor } from './modelConfig.js';
 import type { AnswerValue, Question } from './types.js';
 
 const KEYS = ['A', 'B', 'C', 'D', 'E'];
@@ -94,7 +95,7 @@ export async function explainAnswer(
   ];
 
   const { data, usage } = await converseForText({
-    modelId: EXPLAINER_MODEL_ID,
+    modelId: modelFor('explainer'),
     system: systemPrompt(language),
     content: [{ text: parts.join('\n') }],
     maxTokens: 1200,

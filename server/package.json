@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.859.0",
     "@aws-sdk/client-bedrock-runtime": "3.859.0",
     "cors": "2.8.5",
     "dotenv": "16.6.1",

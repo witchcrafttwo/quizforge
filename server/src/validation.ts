@@ -90,6 +90,12 @@ export const questionMarkSchema = z.object({
   mark: z.enum(['review', 'mastered']).nullable(),
 });
 
+/** modelId が null または空なら環境変数の既定値へ戻す。 */
+export const modelRoleSchema = z.object({
+  role: z.enum(['generate', 'grader', 'explainer']),
+  modelId: z.string().trim().max(200).nullable(),
+});
+
 export const folderNameSchema = z.string().trim().min(1).max(60);
 export const groupNameSchema = z.string().trim().min(1).max(60);
 
