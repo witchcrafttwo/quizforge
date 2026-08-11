@@ -85,25 +85,43 @@ const submitQuizTool: Tool = {
   },
 };
 
+/**
+ * 一部のモデルは tool use の入力で配列を JSON 文字列にして返す
+ * （Sonnet 5 に資料を添付した場合に確認）。文字列なら復元してから検証する。
+ */
+function parseIfJsonString(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+const looseArray = <T extends z.ZodTypeAny>(item: T, minItems = 0) =>
+  z.preprocess(parseIfJsonString, z.array(item).min(minItems));
+
 const rawQuestionSchema = z.object({
   type: z.enum(['multiple_choice', 'multi_select', 'short_answer', 'cloze']),
   difficulty: z.enum(['easy', 'medium', 'hard']),
   question: z.string().trim().min(1),
-  choices: z.array(z.string().trim().min(1)).optional(),
+  choices: looseArray(z.string().trim().min(1)).optional(),
   answerIndex: z.coerce.number().int().optional(),
-  answerIndexes: z.array(z.coerce.number().int()).optional(),
+  answerIndexes: looseArray(z.coerce.number().int()).optional(),
   answerText: z.string().trim().optional(),
-  keyPoints: z.array(z.string().trim().min(1)).optional(),
-  blanks: z
-    .array(z.object({ answers: z.array(z.string().trim().min(1)).min(1) }))
-    .optional(),
+  keyPoints: looseArray(z.string().trim().min(1)).optional(),
+  blanks: looseArray(
+    z.object({ answers: looseArray(z.string().trim().min(1), 1) }),
+  ).optional(),
   explanation: z.string().trim().default(''),
   sourceQuote: z.string().trim().optional(),
 });
 
 const rawQuizSchema = z.object({
   title: z.string().trim().min(1).catch('生成されたクイズ'),
-  questions: z.array(z.unknown()),
+  questions: looseArray(z.unknown()),
 });
 
 type RawQuestion = z.infer<typeof rawQuestionSchema>;
@@ -265,7 +283,9 @@ export async function generateQuiz(
   const content = buildContent(request);
   content.push({ text: quizUserPrompt(config, plan, describeSources(files)) });
 
-  const maxTokens = Math.min(32000, Math.max(4096, 2000 + config.questionCount * 800));
+  // 配列を JSON 文字列として返すモデル（Sonnet 5 など）はエスケープ分だけ
+  // 出力が膨らむため、余裕を持たせる。足りないと途中で切れて復元できない。
+  const maxTokens = Math.min(64000, Math.max(8192, 4000 + config.questionCount * 1600));
 
   const { data: raw, usage } = await converseForJson<unknown>({
     system: quizSystemPrompt(config.language),

@@ -13,9 +13,9 @@ const VERDICT_LABEL: Record<Verdict, string> = {
 };
 
 const VERDICT_CLASS: Record<Verdict, string> = {
-  correct: 'easy',
-  partial: 'medium',
-  incorrect: 'hard',
+  correct: 'verdict correct',
+  partial: 'verdict partial',
+  incorrect: 'verdict incorrect',
 };
 
 interface Props {

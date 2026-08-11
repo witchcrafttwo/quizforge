@@ -193,6 +193,17 @@ export async function converseForJson<T = unknown>({
 
   if (!response) throw lastError ?? new Error('Bedrock の呼び出しに失敗しました');
 
+  // 出力上限で切れた場合、JSON が途中で終わって復元できない。
+  // 「構造化出力を返さなかった」という曖昧な失敗になる前に原因を明示する。
+  if (response.stopReason === 'max_tokens') {
+    throw Object.assign(
+      new Error(
+        `モデルの出力が上限（${maxTokens} トークン）で切れました。出題数を減らして再試行してください。`,
+      ),
+      { status: 502 },
+    );
+  }
+
   const usage: TokenUsage = {
     modelId,
     inputTokens: response.usage?.inputTokens ?? 0,

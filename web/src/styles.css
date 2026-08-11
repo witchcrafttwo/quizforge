@@ -464,6 +464,28 @@ nav.tabs.inner {
   border-color: currentColor;
 }
 
+/* 正誤の判定バッジは一目で分かるよう塗る */
+.badge.verdict {
+  color: #fff;
+  font-weight: 700;
+  padding: 0.05rem 0.45rem;
+}
+
+.badge.verdict.correct {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.badge.verdict.partial {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.badge.verdict.incorrect {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+
 .plan {
   margin: 0;
   padding: 0;
@@ -560,25 +582,47 @@ nav.tabs.inner {
   color: #fff;
 }
 
+/* 答え合わせ。枠線だけだと見落とすので地色と縦帯でも示す。 */
 .choice.correct {
   border-color: var(--ok);
+  background: #e6f2ea;
+  border-left: 4px solid var(--ok);
+}
+
+.choice.correct .key {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
 }
 
 .choice.wrong {
   border-color: var(--bad);
+  background: #fbeae7;
+  border-left: 4px solid var(--bad);
+}
+
+.choice.wrong .key {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
 }
 
 .choice .mark {
-  font-size: 0.8rem;
-  margin-left: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius);
+  color: #fff;
+  white-space: nowrap;
 }
 
 .choice .mark.ok {
-  color: var(--ok);
+  background: var(--ok);
 }
 
 .choice .mark.ng {
-  color: var(--bad);
+  background: var(--bad);
 }
 
 /* ---------- 解説 ---------- */
@@ -658,13 +702,23 @@ nav.tabs.inner {
 }
 
 .cloze-filled.ok {
-  color: var(--ok);
-  border-bottom-color: var(--ok);
+  color: #1c4a35;
+  background: #d9ebe1;
+  border-bottom: 2px solid var(--ok);
+  border-radius: 2px;
 }
 
 .cloze-filled.ng {
-  color: var(--bad);
-  border-bottom-color: var(--bad);
+  color: #7a2a1e;
+  background: #f7ded9;
+  border-bottom: 2px solid var(--bad);
+  border-radius: 2px;
+  text-decoration: line-through;
+}
+
+.cloze-expected {
+  color: var(--ok);
+  font-weight: 700;
 }
 
 .cloze-expected {
