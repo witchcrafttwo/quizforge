@@ -225,6 +225,26 @@ CREATE TABLE IF NOT EXISTS usage_log (
 CREATE INDEX IF NOT EXISTS usage_log_user_idx ON usage_log (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_log_created_idx ON usage_log (created_at DESC);
 
+-- クイズ生成は20〜90秒かかるため、HTTP リクエストの中で完結させない。
+-- 受け付けた時点で行を作り、ワーカーが処理して、クライアントは状態を見に来る。
+-- status: 'queued' / 'running' / 'done' / 'failed'
+CREATE TABLE IF NOT EXISTS jobs (
+  id          uuid PRIMARY KEY,
+  user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        text NOT NULL,
+  status      text NOT NULL DEFAULT 'queued',
+  -- 生成に使う入力（資料の base64 を含むので大きい）
+  payload     jsonb NOT NULL,
+  -- 成功時は quiz_id、失敗時は error にメッセージ
+  quiz_id     uuid REFERENCES quizzes(id) ON DELETE SET NULL,
+  error       text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  started_at  timestamptz,
+  finished_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS jobs_user_idx ON jobs (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs (status, created_at);
+
 -- モデルごとの単価（USD / 100万トークン）。0 のままだとコストを計算しない。
 -- 実際の単価は AWS の料金ページで確認して管理画面から入れる。
 CREATE TABLE IF NOT EXISTS model_prices (

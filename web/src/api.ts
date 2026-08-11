@@ -92,11 +92,30 @@ export const logout = () => post<void>('/api/auth/logout');
 
 /* ---------- クイズ ---------- */
 
-export const generateQuiz = (input: {
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface Job {
+  id: string;
+  status: JobStatus;
+  quizId: string | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  elapsedSeconds: number;
+}
+
+/** 生成を依頼する。すぐ返るので、あとは getJob で状態を見る。 */
+export const requestGeneration = (input: {
   config: QuizConfig;
   files: UploadedFile[];
   text?: string;
-}) => post<Quiz>('/api/quiz/generate', input);
+}) => post<Job>('/api/quiz/generate', input);
+
+export const getJob = (id: string) => request<Job>(`/api/jobs/${id}`);
+
+export const listActiveJobs = () =>
+  request<{ jobs: Job[] }>('/api/jobs').then((r) => r.jobs);
 
 export const listQuizzes = () =>
   request<{ quizzes: QuizSummary[] }>('/api/quizzes').then((r) => r.quizzes);

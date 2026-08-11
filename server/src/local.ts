@@ -10,12 +10,17 @@ const { BEARER_TOKEN_ENV, EXPLAINER_MODEL_ID, GRADER_MODEL_ID, MODEL_ID, REGION,
   await import('./bedrock.js');
 const { initSchema } = await import('./db.js');
 const { seedAdminUser } = await import('./auth.js');
+const { pruneJobs, recoverJobs } = await import('./jobs.js');
 
 const port = Number(process.env.PORT ?? 8787);
 
 const credentials = await checkCredentials();
 await initSchema();
 const adminUsername = await seedAdminUser();
+
+// 前回の停止で中断したジョブを整理し、待機中のものを拾い直す。
+await pruneJobs().catch(() => undefined);
+await recoverJobs().catch((error: unknown) => console.error('[jobs] 復帰に失敗', error));
 
 createApp().listen(port, () => {
   console.log(`api  : http://localhost:${port}`);

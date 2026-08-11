@@ -62,6 +62,8 @@ export default function App() {
   // 「完璧」「復習」の自己申告。問題 id をキーに持つ。
   const [marks, setMarks] = useState<Record<string, api.QuestionMark>>({});
   const [folders, setFolders] = useState<api.Folder[]>([]);
+  // 進行中の生成ジョブ。null なら生成していない。
+  const [job, setJob] = useState<api.Job | null>(null);
   const [busy, setBusy] = useState<'generate' | 'open' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [online, setOnline] = useState(navigator.onLine);
@@ -79,6 +81,61 @@ export default function App() {
   useEffect(() => {
     saveConfig(config);
   }, [config]);
+
+  /* ---------- 生成ジョブの監視 ---------- */
+
+  // 再読み込みしても進行中の生成に戻れるようにする。
+  useEffect(() => {
+    if (!user) return;
+    api
+      .listActiveJobs()
+      .then((active) => {
+        const first = active[0];
+        if (first) {
+          setJob(first);
+          setBusy('generate');
+        }
+      })
+      .catch(() => undefined);
+  }, [user]);
+
+  // 完了するまで2秒ごとに状態を見る。
+  useEffect(() => {
+    if (!job || job.status === 'done' || job.status === 'failed') return;
+
+    const timer = setInterval(() => {
+      api
+        .getJob(job.id)
+        .then(setJob)
+        .catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : String(cause));
+          setJob(null);
+          setBusy(null);
+        });
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [job]);
+
+  // 完了したら、そのクイズを開いて出題へ進む。
+  useEffect(() => {
+    if (!job) return;
+
+    if (job.status === 'failed') {
+      setError(job.error ?? '生成に失敗しました。');
+      setJob(null);
+      setBusy(null);
+      return;
+    }
+    if (job.status === 'done' && job.quizId) {
+      const quizId = job.quizId;
+      setJob(null);
+      refreshHistory();
+      refreshMe();
+      void handleOpen(quizId).finally(() => setBusy(null));
+    }
+    // handleOpen は毎描画で作り直されるため依存に入れない（入れると多重実行になる）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job]);
 
   /* ---------- 認証 ---------- */
 
@@ -217,22 +274,24 @@ export default function App() {
     window.scrollTo({ top: 0 });
   };
 
+  /**
+   * 生成は受け付けだけしてサーバのジョブに任せる。
+   * 完了までポーリングするので、プロキシのタイムアウトに影響されない。
+   */
   const handleGenerate = async () => {
     setError(null);
     setBusy('generate');
     try {
       const uploaded = await Promise.all(files.map(api.fileToUploaded));
-      const generated = await api.generateQuiz({
+      const started = await api.requestGeneration({
         config: { ...config, focus: config.focus?.trim() || undefined },
         files: uploaded,
         text: text.trim() || undefined,
       });
-      refreshHistory();
+      setJob(started);
       refreshMe();
-      await startQuiz(generated);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
       setBusy(null);
     }
   };
@@ -484,6 +543,14 @@ export default function App() {
                 {busy === 'generate' ? '作成中' : 'クイズをつくる'}
               </button>
             </div>
+
+            {job && (
+              <p className="muted">
+                {job.status === 'queued' ? '順番待ちです' : '作成しています'}（
+                {job.elapsedSeconds} 秒）。
+                このページを閉じても作成は続きます。
+              </p>
+            )}
             {!online && <p className="muted">オフラインでは作成できません。</p>}
           </div>
 

@@ -29,6 +29,7 @@ import { explainAnswer } from './explain.js';
 import * as repo from './repo.js';
 import { generateQuiz, generateReplacement } from './quiz.js';
 import * as folders from './folders.js';
+import * as jobs from './jobs.js';
 import * as plans from './plans.js';
 import * as sharing from './sharing.js';
 import {
@@ -209,11 +210,31 @@ export function createApp() {
         return;
       }
 
-      const { quiz, usage } = await generateQuiz(parsed);
-      await repo.insertQuiz(user.id, quiz);
-      await repo.recordUsage(user.id, 'generate', usage, quiz.questions.length);
-      await repo.touchUser(user.id);
-      res.json(quiz);
+      // 生成は20〜90秒かかるため、ここでは受け付けだけして即座に返す。
+      // プロキシのタイムアウト（Cloudflare は100秒）に依存しなくなる。
+      res.status(202).json(await jobs.enqueueGeneration(user.id, parsed));
+    }),
+  );
+
+  app.get(
+    '/api/jobs/:id',
+    requireUser,
+    wrap(async (req, res) => {
+      const job = await jobs.getJob(uuidSchema.parse(req.params.id), req.user!.id);
+      if (!job) {
+        res.status(404).json({ error: 'ジョブが見つかりません' });
+        return;
+      }
+      res.json(job);
+    }),
+  );
+
+  /** 再読み込み後に進行中の生成へ戻れるようにする。 */
+  app.get(
+    '/api/jobs',
+    requireUser,
+    wrap(async (req, res) => {
+      res.json({ jobs: await jobs.listActiveJobs(req.user!.id) });
     }),
   );
 

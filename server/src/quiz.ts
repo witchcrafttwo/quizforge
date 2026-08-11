@@ -89,13 +89,54 @@ const submitQuizTool: Tool = {
  * 一部のモデルは tool use の入力で配列を JSON 文字列にして返す
  * （Sonnet 5 に資料を添付した場合に確認）。文字列なら復元してから検証する。
  */
+/**
+ * 先頭にある対応の取れた JSON 値だけを切り出す。
+ * Sonnet 5 は tool use の入力でオブジェクト全体を文字列化することがあり、
+ * questions の値が `[{...}],"title":"..."}` のように後続まで含んでしまう。
+ * 末尾の余りを捨てないと JSON.parse が失敗する。
+ */
+function sliceLeadingJson(text: string): string | null {
+  const open = text[0];
+  if (open !== '[' && open !== '{') return null;
+  const close = open === '[' ? ']' : '}';
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') inString = true;
+    else if (char === open) depth += 1;
+    else if (char === close) {
+      depth -= 1;
+      if (depth === 0) return text.slice(0, i + 1);
+    }
+  }
+  return null;
+}
+
 function parseIfJsonString(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
-  if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return value;
+  const candidate = sliceLeadingJson(trimmed);
+  if (candidate === null) return value;
+
   try {
-    return JSON.parse(trimmed);
-  } catch {
+    return JSON.parse(candidate);
+  } catch (error) {
+    console.error(
+      `[quiz] 文字列化された JSON を復元できません: ${(error as Error).message}\n` +
+        `  長さ=${trimmed.length}\n  先頭=${trimmed.slice(0, 120)}`,
+    );
     return value;
   }
 }
