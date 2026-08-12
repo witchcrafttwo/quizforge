@@ -344,9 +344,8 @@ export type ModelRole = 'generate' | 'grader' | 'explainer';
 
 export interface ModelOption {
   id: string;
-  provider: string;
-  inputModalities: string[];
-  profileOnly: boolean;
+  /** .env で `id|表示名` と書いた場合の表示名。無ければ id。 */
+  label: string;
 }
 
 export interface ModelSettings {

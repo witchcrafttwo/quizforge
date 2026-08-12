@@ -574,7 +574,8 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
         <section className="card">
           <h2 className="tight">使用するモデル</h2>
           <p className="subtle">
-            切り替えは即座に反映されます。用途ごとに必要な機能が違うので注意してください。
+            候補は .env の <code>BEDROCK_MODEL_CHOICES</code> に書いたものだけです。
+            切り替えは即座に反映されます。
           </p>
 
           {(['generate', 'grader', 'explainer'] as api.ModelRole[]).map((role) => {
@@ -601,12 +602,11 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
                   )}
                   {models.options.map((option) => (
                     <option key={option.id} value={option.id}>
-                      {option.id}
-                      {option.inputModalities.includes('IMAGE') ? ' ・画像可' : ''}
-                      {option.profileOnly ? ' ・プロファイル必須' : ''}
+                      {option.label}
                     </option>
                   ))}
                 </select>
+                <p className="stat">{current}</p>
 
                 {!isDefault && (
                   <div className="actions">

@@ -64,6 +64,8 @@ export default function App() {
   const [folders, setFolders] = useState<api.Folder[]>([]);
   // 進行中の生成ジョブ。null なら生成していない。
   const [job, setJob] = useState<api.Job | null>(null);
+  // できあがったクイズの id。自動では開かず、案内だけ出す。
+  const [doneQuizId, setDoneQuizId] = useState<string | null>(null);
   const [busy, setBusy] = useState<'generate' | 'open' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [online, setOnline] = useState(navigator.onLine);
@@ -116,7 +118,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [job]);
 
-  // 完了したら、そのクイズを開いて出題へ進む。
+  // 完了しても勝手に出題を始めない。一覧を更新して、案内だけ出す。
   useEffect(() => {
     if (!job) return;
 
@@ -127,13 +129,13 @@ export default function App() {
       return;
     }
     if (job.status === 'done' && job.quizId) {
-      const quizId = job.quizId;
+      setDoneQuizId(job.quizId);
       setJob(null);
+      setBusy(null);
       refreshHistory();
       refreshMe();
-      void handleOpen(quizId).finally(() => setBusy(null));
     }
-    // handleOpen は毎描画で作り直されるため依存に入れない（入れると多重実行になる）
+    // refreshHistory / refreshMe はこの下で宣言しているため依存に入れない。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job]);
 
@@ -235,6 +237,8 @@ export default function App() {
     setResult(null);
     setHistory([]);
     setIsAdmin(false);
+    setJob(null);
+    setDoneQuizId(null);
     goTab('create');
     setView('setup');
   };
@@ -550,6 +554,39 @@ export default function App() {
                 {job.elapsedSeconds} 秒）。
                 このページを閉じても作成は続きます。
               </p>
+            )}
+
+            {doneQuizId && (
+              <div className="card nested">
+                <div className="row between">
+                  <strong>クイズができました</strong>
+                  <button type="button" className="link" onClick={() => setDoneQuizId(null)}>
+                    閉じる
+                  </button>
+                </div>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => {
+                      const id = doneQuizId;
+                      setDoneQuizId(null);
+                      void handleOpen(id);
+                    }}
+                  >
+                    いま解く
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDoneQuizId(null);
+                      switchTab('library');
+                    }}
+                  >
+                    一覧で見る
+                  </button>
+                </div>
+              </div>
             )}
             {!online && <p className="muted">オフラインでは作成できません。</p>}
           </div>

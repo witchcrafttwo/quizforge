@@ -1,7 +1,6 @@
 // 使用モデルは管理画面から切り替えられる。DB の値を優先し、無ければ環境変数。
 // 呼び出しごとに DB を読むと遅いので、メモリに載せて更新時だけ入れ替える。
-import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } from '@aws-sdk/client-bedrock';
-import { GRADER_MODEL_ID, EXPLAINER_MODEL_ID, MODEL_ID, REGION } from './bedrock.js';
+import { GRADER_MODEL_ID, EXPLAINER_MODEL_ID, MODEL_ID } from './bedrock.js';
 import { query } from './db.js';
 
 export type ModelRole = 'generate' | 'grader' | 'explainer';
@@ -59,57 +58,42 @@ export async function setModel(role: ModelRole, modelId: string | null): Promise
 
 export interface ModelOption {
   id: string;
-  provider: string;
-  /** TEXT / IMAGE など。作問には画像とドキュメントを読めるモデルが必要。 */
-  inputModalities: string[];
-  /** 推論プロファイル経由でしか呼べないモデルは接頭辞つきの id を使う。 */
-  profileOnly: boolean;
+  /** 表示名。`id|ラベル` の形で書けば任意の名前を付けられる。 */
+  label: string;
 }
 
-let optionCache: { at: number; items: ModelOption[] } | null = null;
-
 /**
- * 呼び出せるモデルの一覧。10分キャッシュする。
- * 推論プロファイルも含めるので、us. 接頭辞が必要なモデルも選べる。
+ * 選択肢は .env の BEDROCK_MODEL_CHOICES に列挙したものだけ。
+ * Bedrock の全モデル（150件近く）から選ばせると、作問に使えないものが大半で
+ * 誤設定を招くため、運用者が確認したものだけを候補にする。
+ *
+ * 書式: カンマ区切り。`モデルID` か `モデルID|表示名`。
+ * 例: us.anthropic.claude-sonnet-5|Sonnet 5, zai.glm-5|GLM-5 (安い)
  */
-export async function listModelOptions(): Promise<ModelOption[]> {
-  if (optionCache && Date.now() - optionCache.at < 10 * 60 * 1000) return optionCache.items;
-
-  const client = new BedrockClient({ region: REGION });
-  const [models, profiles] = await Promise.all([
-    client.send(new ListFoundationModelsCommand({ byOutputModality: 'TEXT' })),
-    client.send(new ListInferenceProfilesCommand({ typeEquals: 'SYSTEM_DEFINED' })).catch(() => ({
-      inferenceProfileSummaries: [],
-    })),
-  ]);
-
+function parseChoices(): ModelOption[] {
+  const raw = process.env.BEDROCK_MODEL_CHOICES ?? '';
   const items: ModelOption[] = [];
 
-  for (const model of models.modelSummaries ?? []) {
-    if (!model.modelId || !model.inputModalities?.includes('TEXT')) continue;
-    const onDemand = model.inferenceTypesSupported?.includes('ON_DEMAND') ?? false;
-    items.push({
-      id: model.modelId,
-      provider: model.providerName ?? '',
-      inputModalities: model.inputModalities ?? [],
-      profileOnly: !onDemand,
-    });
-  }
-
-  // プロファイルは基盤モデルのモダリティを引き継ぐ。接頭辞を外して照合する。
-  for (const profile of profiles.inferenceProfileSummaries ?? []) {
-    const id = profile.inferenceProfileId;
+  for (const entry of raw.split(',')) {
+    const [id, label] = entry.split('|').map((s) => s.trim());
     if (!id) continue;
-    const base = items.find((item) => id.endsWith(item.id));
-    items.push({
-      id,
-      provider: base?.provider ?? '',
-      inputModalities: base?.inputModalities ?? ['TEXT'],
-      profileOnly: false,
-    });
+    items.push({ id, label: label || id });
   }
 
-  items.sort((a, b) => a.id.localeCompare(b.id));
-  optionCache = { at: Date.now(), items };
+  // 未設定なら、いま使っている3つを候補にして最低限選べる状態にする。
+  if (items.length === 0) {
+    for (const id of new Set(Object.values(ENV_DEFAULT))) {
+      items.push({ id, label: id });
+    }
+  }
   return items;
+}
+
+export function listModelOptions(): ModelOption[] {
+  return parseChoices();
+}
+
+/** 候補に無いモデルへの切り替えを拒否する。誤入力と取り違えを防ぐ。 */
+export function isAllowedModel(modelId: string): boolean {
+  return parseChoices().some((option) => option.id === modelId);
 }

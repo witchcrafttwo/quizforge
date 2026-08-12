@@ -758,11 +758,7 @@ export function createApp() {
     '/api/admin/models',
     requireAdmin,
     wrap(async (_req, res) => {
-      const options = await modelConfig.listModelOptions().catch((error: unknown) => {
-        console.error('[models] 一覧の取得に失敗', error);
-        return [];
-      });
-      res.json({ ...modelConfig.modelSettings(), options });
+      res.json({ ...modelConfig.modelSettings(), options: modelConfig.listModelOptions() });
     }),
   );
 
@@ -774,6 +770,15 @@ export function createApp() {
         role: req.params.role,
         modelId: req.body?.modelId ?? null,
       });
+
+      // .env の候補に無いモデルは受け付けない。
+      if (modelId && !modelConfig.isAllowedModel(modelId)) {
+        res.status(400).json({
+          error: `${modelId} は候補にありません。.env の BEDROCK_MODEL_CHOICES に追加してください。`,
+        });
+        return;
+      }
+
       await modelConfig.setModel(role, modelId);
       res.json(modelConfig.modelSettings());
     }),
