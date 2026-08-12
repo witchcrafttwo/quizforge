@@ -81,12 +81,18 @@ export default function UploadPanel({
 
       {files.length > 0 && (
         <>
-          <ul className="rows">
+          <div className="explorer">
             {files.map((file) => (
-              <li key={`${file.name}-${file.size}`}>
-                <span className="grow">{file.name}</span>
-                <span className="row tight fixed">
-                  <span className="stat">{formatSize(file.size)}</span>
+              <div key={`${file.name}-${file.size}`} className="tile">
+                <div className="tile-main">
+                  <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 2h8l6 6v14H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" />
+                    <path d="M14 2v6h6" className="fold" />
+                  </svg>
+                  <span className="tile-name">{file.name}</span>
+                  <span className="tile-meta">{formatSize(file.size)}</span>
+                </div>
+                <div className="tile-actions">
                   <button
                     type="button"
                     className="link"
@@ -95,10 +101,10 @@ export default function UploadPanel({
                   >
                     削除
                   </button>
-                </span>
-              </li>
+                </div>
+              </div>
             ))}
-          </ul>
+          </div>
           <p className={overLimit ? 'stat bad-text' : 'stat'}>
             {files.length}
             {maxFiles > 0 && ` / ${maxFiles}`} 件、{formatSize(totalBytes)}
