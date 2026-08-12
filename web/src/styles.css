@@ -896,107 +896,149 @@ button.crumb.over {
 }
 
 .explorer {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.5rem;
   margin-top: 0.9rem;
 }
 
-.explorer > p {
-  grid-column: 1 / -1;
-}
-
-.tile {
+/* 名前 / 問題数 / 作成日 / 操作 の4列 */
+.ex-head,
+.ex-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5rem 9rem auto;
+  align-items: center;
+  gap: 0.5rem;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 0.4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  background: var(--surface);
+  padding: 0.1rem 0.4rem;
 }
 
-.tile:hover {
+.ex-head {
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.2rem;
+}
+
+.ex-row {
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+}
+
+.ex-row:hover {
   background: var(--sunk);
 }
 
-.tile.dragging {
+.ex-row.dragging {
   opacity: 0.45;
 }
 
-/* ドロップ先として有効な間だけ枠を出す */
-.tile.drop.over {
+/* フォルダー行にドラッグしてきたときだけ枠を出す */
+.ex-row.drop.over {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-button.tile-main {
+button.ex-name {
   background: none;
   border: none;
-  padding: 0.35rem 0.2rem;
+  padding: 0.4rem 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
-  text-align: center;
-  width: 100%;
+  gap: 0.5rem;
+  text-align: left;
+  min-width: 0;
   cursor: pointer;
 }
 
-button.tile-main:hover:not(:disabled) {
+button.ex-name:hover:not(:disabled) {
   border: none;
 }
 
-.tile .icon {
-  width: 2.6rem;
-  height: 2.6rem;
+.ex-row .icon,
+.ex-head .icon {
+  width: 1.15rem;
+  height: 1.15rem;
   fill: var(--accent);
   flex: 0 0 auto;
 }
 
-.tile .icon .fold {
+.ex-row .icon .fold {
   fill: var(--paper);
 }
 
-.tile-name {
-  font-size: 0.86rem;
-  line-height: 1.4;
+.ex-text {
+  font-size: 0.9rem;
   overflow-wrap: anywhere;
-  /* 3行を超える名前は省略する */
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
-.tile-meta {
-  font-size: 0.72rem;
+.ex-sub {
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+
+.ex-col {
+  font-size: 0.76rem;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.tile-actions {
+.ex-actions {
   display: flex;
   gap: 0.5rem;
-  justify-content: center;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  white-space: nowrap;
   /* 常に出すと騒がしいので、触れたときだけ見せる */
   opacity: 0;
   transition: opacity 0.12s ease;
 }
 
-.tile:hover .tile-actions,
-.tile:focus-within .tile-actions {
+.ex-row:hover .ex-actions,
+.ex-row:focus-within .ex-actions {
   opacity: 1;
 }
 
 @media (hover: none) {
   /* 触覚デバイスでは hover が無いので常に出す */
-  .tile-actions {
+  .ex-actions {
     opacity: 1;
   }
 }
 
-.tile-actions button.link {
+.ex-actions button.link {
   font-size: 0.76rem;
+}
+
+/* アップロード済みファイルは 名前 / サイズ / 操作 の3列 */
+.ex-row.files {
+  grid-template-columns: minmax(0, 1fr) 5.5rem auto;
+}
+
+.ex-row.files .ex-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.4rem 0;
+}
+
+/* 幅が狭いときは日付と問題数の列を落とす */
+@media (max-width: 560px) {
+  .ex-head {
+    display: none;
+  }
+
+  .ex-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ex-row .ex-col {
+    display: none;
+  }
 }

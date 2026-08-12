@@ -100,7 +100,7 @@ export default function HistoryList({
       event.preventDefault();
       move(folderId);
     },
-    className: `tile drop${dropTarget === key ? ' over' : ''}`,
+    className: `ex-row drop${dropTarget === key ? ' over' : ''}`,
   });
 
   const startRename = (quiz: QuizSummary) => {
@@ -201,44 +201,48 @@ export default function HistoryList({
       {dragging && <p className="stat">フォルダーへドラッグすると移動します。</p>}
 
       <div className="explorer">
+        <div className="ex-head">
+          <span>名前</span>
+          <span className="ex-col">問題数</span>
+          <span className="ex-col">作成日</span>
+          <span />
+        </div>
+
         {showFolders &&
           folders.map((folder) => (
-            <div
-              key={folder.id}
-              {...dropProps(folder.id, folder.id)}
-              onDoubleClick={() => setCurrent(folder.id)}
-            >
-              <button type="button" className="tile-main" onClick={() => setCurrent(folder.id)}>
+            <div key={folder.id} {...dropProps(folder.id, folder.id)}>
+              <button type="button" className="ex-name" onClick={() => setCurrent(folder.id)}>
                 <FolderIcon />
-                <span className="tile-name">{folder.name}</span>
-                <span className="tile-meta">
-                  {folder.quizCount} 件{folder.shared && '・配布中'}
-                </span>
+                <span className="ex-text">{folder.name}</span>
               </button>
+              <span className="ex-col">{folder.quizCount} 件</span>
+              <span className="ex-col">{folder.shared ? '配布中' : 'フォルダー'}</span>
+              <span />
             </div>
           ))}
 
         {showFolders && shared.length > 0 && (
-          <div className="tile">
-            <button type="button" className="tile-main" onClick={() => setCurrent(SHARED)}>
+          <div className="ex-row">
+            <button type="button" className="ex-name" onClick={() => setCurrent(SHARED)}>
               <FolderIcon />
-              <span className="tile-name">配布されたクイズ</span>
-              <span className="tile-meta">{shared.length} 件</span>
+              <span className="ex-text">配布されたクイズ</span>
             </button>
+            <span className="ex-col">{shared.length} 件</span>
+            <span className="ex-col">フォルダー</span>
+            <span />
           </div>
         )}
 
         {visible.map((quiz) => (
           <div
             key={quiz.id}
-            className={`tile${dragging === quiz.id ? ' dragging' : ''}`}
+            className={`ex-row${dragging === quiz.id ? ' dragging' : ''}`}
             draggable={quiz.isOwn && renaming !== quiz.id}
             onDragStart={() => setDragging(quiz.id)}
             onDragEnd={() => {
               setDragging(null);
               setDropTarget(null);
             }}
-            onDoubleClick={() => onOpen(quiz.id)}
           >
             {renaming === quiz.id ? (
               <input
@@ -255,19 +259,20 @@ export default function HistoryList({
                 }}
               />
             ) : (
-              <button type="button" className="tile-main" onClick={() => onOpen(quiz.id)}>
+              <button type="button" className="ex-name" onClick={() => onOpen(quiz.id)}>
                 <QuizIcon />
-                <span className="tile-name">{quiz.title}</span>
-                <span className="tile-meta">
-                  {quiz.questionCount}問
-                  {quiz.weakCount > 0 && `・苦手${quiz.weakCount}`}
-                  {!quiz.isOwn && `・${quiz.ownerName}`}
+                <span className="ex-text">
+                  {quiz.title}
+                  {quiz.weakCount > 0 && <span className="badge hard">苦手 {quiz.weakCount}</span>}
+                  {!quiz.isOwn && <span className="ex-sub">{quiz.ownerName}</span>}
                 </span>
-                <span className="tile-meta">{formatDate(quiz.createdAt)}</span>
               </button>
             )}
 
-            <div className="tile-actions">
+            <span className="ex-col">{quiz.questionCount}</span>
+            <span className="ex-col">{formatDate(quiz.createdAt)}</span>
+
+            <span className="ex-actions">
               {quiz.weakCount > 0 && (
                 <button type="button" className="link" onClick={() => onReview(quiz.id)}>
                   復習
@@ -286,7 +291,7 @@ export default function HistoryList({
                   </button>
                 </>
               )}
-            </div>
+            </span>
           </div>
         ))}
 

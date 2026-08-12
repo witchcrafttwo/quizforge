@@ -83,16 +83,16 @@ export default function UploadPanel({
         <>
           <div className="explorer">
             {files.map((file) => (
-              <div key={`${file.name}-${file.size}`} className="tile">
-                <div className="tile-main">
+              <div key={`${file.name}-${file.size}`} className="ex-row files">
+                <span className="ex-name">
                   <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M6 2h8l6 6v14H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" />
                     <path d="M14 2v6h6" className="fold" />
                   </svg>
-                  <span className="tile-name">{file.name}</span>
-                  <span className="tile-meta">{formatSize(file.size)}</span>
-                </div>
-                <div className="tile-actions">
+                  <span className="ex-text">{file.name}</span>
+                </span>
+                <span className="ex-col">{formatSize(file.size)}</span>
+                <span className="ex-actions">
                   <button
                     type="button"
                     className="link"
@@ -101,7 +101,7 @@ export default function UploadPanel({
                   >
                     削除
                   </button>
-                </div>
+                </span>
               </div>
             ))}
           </div>
