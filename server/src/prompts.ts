@@ -174,7 +174,9 @@ ${sourceList || '- (pasted text only)'}
 Required composition (total ${config.questionCount} questions, follow these counts exactly):
 ${breakdown}
 ${focus ? `\nFocus requested by the user:\n${focus}\n` : ''}
-Give the quiz a concise title that reflects the material's topic.`;
+Set title to a concise heading (under 40 characters) naming the actual topic of the material, e.g. "Normalisation in relational databases".
+- Never use the file name, and never use a generic word like "Quiz", "Test", or "Questions" on its own.
+- No quotation marks, brackets, markdown, trailing punctuation, or a "Title:" prefix. Return the heading text only.`;
   }
 
   return `添付の授業資料からクイズを作成してください。
@@ -185,7 +187,9 @@ ${sourceList || '- （貼り付けテキストのみ）'}
 出題構成（合計 ${config.questionCount} 問。この内訳を厳密に守ること）:
 ${breakdown}
 ${focus ? `\nユーザーからの出題範囲・観点の指定:\n${focus}\n` : ''}
-title には資料の主題が分かる簡潔な見出しを付けてください。`;
+title には資料の主題そのものが分かる簡潔な見出し（30文字以内）を付けてください。例:「関係データベースの正規化」。
+- ファイル名をそのまま使わない。「クイズ」「テスト」「問題」だけの見出しにしない。
+- 鉤括弧・引用符・記号での装飾、末尾の句点、「タイトル:」のような前置きは付けない。見出しの文字列だけを入れる。`;
 }
 
 export function graderSystemPrompt(language: 'ja' | 'en'): string {

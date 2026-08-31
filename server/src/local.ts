@@ -6,8 +6,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env') });
 
 const { createApp } = await import('./app.js');
-const { BEARER_TOKEN_ENV, EXPLAINER_MODEL_ID, GRADER_MODEL_ID, MODEL_ID, REGION, checkCredentials } =
-  await import('./bedrock.js');
+const {
+  BEARER_TOKEN_ENV,
+  EXPLAINER_MODEL_ID,
+  FALLBACK_MODEL_ID,
+  GRADER_MODEL_ID,
+  MODEL_ID,
+  REGION,
+  checkCredentials,
+} = await import('./bedrock.js');
 const { initSchema } = await import('./db.js');
 const { seedAdminUser } = await import('./auth.js');
 const { pruneJobs, recoverJobs } = await import('./jobs.js');
@@ -32,6 +39,11 @@ createApp().listen(port, () => {
   console.log(`model: 作問 ${activeModels.generate} (${REGION})`);
   console.log(`     : 採点 ${activeModels.grader}`);
   console.log(`     : 解説 ${activeModels.explainer}`);
+  if (FALLBACK_MODEL_ID) {
+    console.log(`     : 混雑時の代替 ${FALLBACK_MODEL_ID}`);
+  } else {
+    console.log('     : 混雑時の代替なし（.env の BEDROCK_FALLBACK_MODEL_ID で設定）');
+  }
   if (credentials) {
     console.log(`creds: ${credentials}`);
   } else {

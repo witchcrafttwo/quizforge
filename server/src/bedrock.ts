@@ -15,8 +15,17 @@ export const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-opu
 export const GRADER_MODEL_ID = process.env.BEDROCK_GRADER_MODEL_ID ?? MODEL_ID;
 // AI解説用。資料は読まずテキストだけを扱うので、テキスト専用モデルでも動く。
 export const EXPLAINER_MODEL_ID = process.env.BEDROCK_EXPLAINER_MODEL_ID ?? MODEL_ID;
+/**
+ * 本命のモデルが 503 を返し続けたときの逃げ先。未設定なら切り替えない。
+ * 同じモデルの別接頭辞（us. ↔ global.）を指定すると、単価も精度も変えずに
+ * 混雑しているルーティングだけを避けられる。
+ */
+export const FALLBACK_MODEL_ID = process.env.BEDROCK_FALLBACK_MODEL_ID?.trim() || null;
 
-const client = new BedrockRuntimeClient({ region: REGION });
+// 再試行はこのモジュールで面倒を見るので、SDK 内部の粘りは浅くしておく。
+// 両方が既定の3回ずつ粘ると、503 が続いたときに待ち時間が積み上がって
+// 採点や解説の応答がプロキシのタイムアウトに近づく。
+const client = new BedrockRuntimeClient({ region: REGION, maxAttempts: 2 });
 
 /** SDK が自動で読む Bedrock API キーの環境変数名。この綴りは SDK 側の規約。 */
 export const BEARER_TOKEN_ENV = 'AWS_BEARER_TOKEN_BEDROCK';
@@ -112,6 +121,117 @@ export function describeSources(files: UploadedFile[]): string {
 const NO_TEMPERATURE_MODELS = new Set<string>();
 const NO_TOOL_CHOICE_MODELS = new Set<string>();
 
+/* ---------- 一時的な失敗への備え ---------- */
+
+/** 同じモデルに何回まで粘るか。 */
+const TRANSIENT_ATTEMPTS = 3;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** 待ち時間は指数で伸ばし、±20% のゆらぎを足して再試行が同時に集まらないようにする。 */
+function backoffMs(retryIndex: number): number {
+  const base = 1000 * 2 ** retryIndex; // 1s, 2s, 4s...
+  return Math.round(base * (0.8 + Math.random() * 0.4));
+}
+
+/**
+ * 待って掛け直せば直る種類の失敗か。
+ * クロスリージョン推論プロファイルは混雑すると ServiceUnavailableException を
+ * 返す。モデルアクセス不可（403）や入力不正（400）はここに含めない。
+ */
+function isTransient(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : '';
+  if (
+    name === 'ServiceUnavailableException' ||
+    name === 'ThrottlingException' ||
+    name === 'ModelNotReadyException' ||
+    name === 'InternalServerException'
+  ) {
+    return true;
+  }
+  const status = (error as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata
+    ?.httpStatusCode;
+  return status === 429 || status === 500 || status === 503;
+}
+
+/**
+ * モデルごとの癖（temperature や toolChoice を受け付けない）を吸収する。
+ * 拒否された要素を外して掛け直し、判明した制約は覚えて次回以降の往復を省く。
+ */
+async function negotiateParams<R>(
+  modelId: string,
+  send: (opts: { forceTool: boolean; withTemperature: boolean }) => Promise<R>,
+): Promise<R> {
+  let withTemperature = !NO_TEMPERATURE_MODELS.has(modelId);
+  let forceTool = !NO_TOOL_CHOICE_MODELS.has(modelId);
+
+  // 外せる要素は temperature と toolChoice の2つなので、最大3周で必ず決まる。
+  for (let round = 0; round < 3; round += 1) {
+    try {
+      return await send({ forceTool, withTemperature });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (withTemperature && /temperature/i.test(message)) {
+        NO_TEMPERATURE_MODELS.add(modelId);
+        withTemperature = false;
+        continue;
+      }
+      if (forceTool && /toolChoice|tool_choice/i.test(message)) {
+        NO_TOOL_CHOICE_MODELS.add(modelId);
+        forceTool = false;
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Bedrock がリクエストを受け付けませんでした。');
+}
+
+/**
+ * 一時的な失敗を挟みながら Converse を呼ぶ。同じモデルで数回粘り、それでも
+ * 駄目なら BEDROCK_FALLBACK_MODEL_ID へ切り替える。
+ * 実際に応答したモデル ID を返すので、課金の記録は実態と合う。
+ */
+async function withResilience<R>(
+  primary: string,
+  send: (modelId: string) => Promise<R>,
+): Promise<{ response: R; modelId: string }> {
+  const candidates = [primary];
+  if (FALLBACK_MODEL_ID && FALLBACK_MODEL_ID !== primary) candidates.push(FALLBACK_MODEL_ID);
+
+  let lastError: unknown;
+
+  for (const [index, candidate] of candidates.entries()) {
+    for (let attempt = 1; attempt <= TRANSIENT_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await send(candidate);
+        if (candidate !== primary) {
+          console.warn(`[bedrock] ${candidate} で応答を得ました（${primary} の代替）。`);
+        }
+        return { response, modelId: candidate };
+      } catch (error) {
+        if (!isTransient(error)) throw error;
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[bedrock] ${candidate} が一時的に応答しません（${attempt}/${TRANSIENT_ATTEMPTS}）: ${message}`,
+        );
+        if (attempt < TRANSIENT_ATTEMPTS) await sleep(backoffMs(attempt - 1));
+      }
+    }
+    const next = candidates[index + 1];
+    if (next) console.warn(`[bedrock] ${candidate} を諦めて ${next} に切り替えます。`);
+  }
+
+  // 混雑は利用者の入力のせいではないので、原因が伝わる文言で 503 を返す。
+  throw Object.assign(
+    new Error(
+      `Bedrock が混み合っていて応答しません（${candidates.join(' / ')}）。少し待ってから再試行してください。`,
+    ),
+    { status: 503, cause: lastError },
+  );
+}
+
 interface ConverseToolArgs {
   modelId?: string;
   system: string;
@@ -136,6 +256,7 @@ export interface ConverseResult<T> {
 /**
  * ツール利用を強制して構造化 JSON を受け取る。
  * toolChoice を受け付けないモデル向けに auto へフォールバックする。
+ * 混雑による 503 は数回粘ったうえで代替モデルへ逃げる。
  */
 export async function converseForJson<T = unknown>({
   modelId = MODEL_ID,
@@ -148,50 +269,23 @@ export async function converseForJson<T = unknown>({
   const toolName = tool.toolSpec?.name;
   if (!toolName) throw new Error('toolSpec.name is required');
 
-  const run = (opts: { forceTool: boolean; withTemperature: boolean }) =>
-    client.send(
-      new ConverseCommand({
-        modelId,
-        system: [{ text: system }],
-        messages: [{ role: 'user', content }],
-        inferenceConfig: opts.withTemperature ? { maxTokens, temperature } : { maxTokens },
-        toolConfig: {
-          tools: [tool],
-          toolChoice: opts.forceTool ? { tool: { name: toolName } } : { auto: {} },
-        },
-      }),
-    );
-
-  // Opus 5 のように temperature を拒否するモデル、toolChoice の強制を受け付けない
-  // モデルがあるため、拒否された要素を外して再試行する。判明した制約は記憶して
-  // 次回以降の無駄な往復を避ける。
-  let withTemperature = !NO_TEMPERATURE_MODELS.has(modelId);
-  let forceTool = !NO_TOOL_CHOICE_MODELS.has(modelId);
-
-  let response: Awaited<ReturnType<typeof run>> | undefined;
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < 3 && !response; attempt += 1) {
-    try {
-      response = await run({ forceTool, withTemperature });
-    } catch (error) {
-      lastError = error;
-      const message = error instanceof Error ? error.message : String(error);
-      if (withTemperature && /temperature/i.test(message)) {
-        NO_TEMPERATURE_MODELS.add(modelId);
-        withTemperature = false;
-        continue;
-      }
-      if (forceTool && /toolChoice|tool_choice/i.test(message)) {
-        NO_TOOL_CHOICE_MODELS.add(modelId);
-        forceTool = false;
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  if (!response) throw lastError ?? new Error('Bedrock の呼び出しに失敗しました');
+  const { response, modelId: usedModelId } = await withResilience(modelId, (candidate) =>
+    // モデルの癖の吸収は候補ごとに行う。覚えた制約が別モデルに混ざらないようにする。
+    negotiateParams(candidate, (opts) =>
+      client.send(
+        new ConverseCommand({
+          modelId: candidate,
+          system: [{ text: system }],
+          messages: [{ role: 'user', content }],
+          inferenceConfig: opts.withTemperature ? { maxTokens, temperature } : { maxTokens },
+          toolConfig: {
+            tools: [tool],
+            toolChoice: opts.forceTool ? { tool: { name: toolName } } : { auto: {} },
+          },
+        }),
+      ),
+    ),
+  );
 
   // 出力上限で切れた場合、JSON が途中で終わって復元できない。
   // 「構造化出力を返さなかった」という曖昧な失敗になる前に原因を明示する。
@@ -205,7 +299,7 @@ export async function converseForJson<T = unknown>({
   }
 
   const usage: TokenUsage = {
-    modelId,
+    modelId: usedModelId,
     inputTokens: response.usage?.inputTokens ?? 0,
     outputTokens: response.usage?.outputTokens ?? 0,
   };
@@ -237,30 +331,18 @@ export async function converseForText({
   maxTokens = 1500,
   temperature = 0.3,
 }: ConverseTextArgs): Promise<ConverseResult<string>> {
-  const run = (withTemperature: boolean) =>
-    client.send(
-      new ConverseCommand({
-        modelId,
-        system: [{ text: system }],
-        messages: [{ role: 'user', content }],
-        inferenceConfig: withTemperature ? { maxTokens, temperature } : { maxTokens },
-      }),
-    );
-
-  let withTemperature = !NO_TEMPERATURE_MODELS.has(modelId);
-  let response;
-  try {
-    response = await run(withTemperature);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (withTemperature && /temperature/i.test(message)) {
-      NO_TEMPERATURE_MODELS.add(modelId);
-      withTemperature = false;
-      response = await run(false);
-    } else {
-      throw error;
-    }
-  }
+  const { response, modelId: usedModelId } = await withResilience(modelId, (candidate) =>
+    negotiateParams(candidate, (opts) =>
+      client.send(
+        new ConverseCommand({
+          modelId: candidate,
+          system: [{ text: system }],
+          messages: [{ role: 'user', content }],
+          inferenceConfig: opts.withTemperature ? { maxTokens, temperature } : { maxTokens },
+        }),
+      ),
+    ),
+  );
 
   const text = (response.output?.message?.content ?? [])
     .map((block) => block.text ?? '')
@@ -272,7 +354,7 @@ export async function converseForText({
   return {
     data: text,
     usage: {
-      modelId,
+      modelId: usedModelId,
       inputTokens: response.usage?.inputTokens ?? 0,
       outputTokens: response.usage?.outputTokens ?? 0,
     },

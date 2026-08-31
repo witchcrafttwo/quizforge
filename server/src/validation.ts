@@ -64,6 +64,14 @@ export const signupSchema = credentialsSchema.extend({
   signupCode: z.string().min(1).max(200),
 });
 
+/**
+ * 管理画面からのアカウント作成。すでに管理者として認証済みなので招待コードは要らない。
+ * 代わりにプランをその場で割り当てられる（省略時は plans の既定値）。
+ */
+export const adminCreateUserSchema = credentialsSchema.extend({
+  planId: z.string().trim().min(1).max(40).optional(),
+});
+
 /* ---------- 解答 ---------- */
 
 /**

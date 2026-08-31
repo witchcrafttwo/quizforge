@@ -836,6 +836,18 @@ code.inline-code {
   font-size: 0.88rem;
 }
 
+/* 成功や受け渡し情報の通知。既定の .notice はエラー色なので上書きする。 */
+.notice.good {
+  border-color: var(--ok);
+  background: #f0f5f1;
+  color: #23503b;
+}
+
+.notice.good code {
+  user-select: all;
+  word-break: break-all;
+}
+
 .warn-text {
   color: var(--warn);
 }

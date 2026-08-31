@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+﻿import { randomUUID } from 'node:crypto';
 import type { ContentBlock, Tool } from '@aws-sdk/client-bedrock-runtime';
 import { z } from 'zod';
 import { converseForJson, describeSources, toContentBlocks, type TokenUsage } from './bedrock.js';
@@ -16,7 +16,12 @@ const submitQuizTool: Tool = {
       json: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: '資料の主題を表す簡潔なタイトル' },
+          title: {
+            type: 'string',
+            maxLength: 60,
+            description:
+              '資料の主題を表す簡潔なタイトル。装飾や「タイトル:」のような前置きを付けない。',
+          },
           questions: {
             type: 'array',
             items: {
@@ -121,22 +126,158 @@ function sliceLeadingJson(text: string): string | null {
   return null;
 }
 
+/** ```json … ``` で囲んで返すモデルがあるため、フェンスを外す。 */
+function stripFence(text: string): string {
+  const fenced = /^```[a-z]*\s*\n?([\s\S]*?)\n?```$/i.exec(text);
+  return fenced?.[1]?.trim() ?? text;
+}
+
+/**
+ * JSON の文字列リテラルの中に生の改行やタブが混ざっていると JSON.parse が落ちる。
+ * 文字列の内側にいる間だけ制御文字をエスケープして通せるようにする。
+ */
+function escapeControlChars(text: string): string {
+  const ESCAPES: Record<string, string> = {
+    '\n': '\\n',
+    '\r': '\\r',
+    '\t': '\\t',
+    '\b': '\\b',
+    '\f': '\\f',
+  };
+
+  let out = '';
+  let inString = false;
+  let escaped = false;
+
+  for (const char of text) {
+    if (inString && !escaped && char.charCodeAt(0) < 0x20) {
+      out += ESCAPES[char] ?? `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
+      continue;
+    }
+    out += char;
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') {
+      inString = true;
+    }
+  }
+  return out;
+}
+
+/** 制御文字の混入まで面倒を見た JSON.parse。駄目なら undefined。 */
+function tryParseJson(text: string): { value: unknown } | undefined {
+  try {
+    return { value: JSON.parse(text) };
+  } catch {
+    // 生の改行が原因なら、エスケープし直せば通る。
+  }
+  try {
+    return { value: JSON.parse(escapeControlChars(text)) };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 閉じ括弧まで届いていない配列から、完結している要素だけを取り出す。
+ * 出力が途中で切れても、拾えた問題だけでクイズを作れるようにする。
+ */
+function salvageArrayElements(text: string): unknown[] | null {
+  if (text[0] !== '[') return null;
+
+  const items: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 1; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === '{' || char === '[') {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        const element = tryParseJson(text.slice(start, i + 1));
+        if (element) items.push(element.value);
+        start = -1;
+      }
+      // 配列自体の閉じ括弧に到達した。
+      if (depth < 0) break;
+    }
+  }
+  return items.length > 0 ? items : null;
+}
+
 /** 配列を JSON 文字列で返すモデルがあるため、文字列なら復元してから検証する。 */
 function parseIfJsonString(value: unknown): unknown {
   if (typeof value !== 'string') return value;
-  const trimmed = value.trim();
-  const candidate = sliceLeadingJson(trimmed);
-  if (candidate === null) return value;
+  const trimmed = stripFence(value.trim());
 
-  try {
-    return JSON.parse(candidate);
-  } catch (error) {
-    console.error(
-      `[quiz] 文字列化された JSON を復元できません: ${(error as Error).message}\n` +
-        `  長さ=${trimmed.length}\n  先頭=${trimmed.slice(0, 120)}`,
-    );
-    return value;
+  const candidate = sliceLeadingJson(trimmed);
+  if (candidate !== null) {
+    const parsed = tryParseJson(candidate);
+    if (parsed) return parsed.value;
   }
+
+  // 途中で切れているか壊れている。全滅させるより拾える分を活かす。
+  const salvaged = salvageArrayElements(trimmed);
+  if (salvaged) {
+    console.warn(`[quiz] 壊れた JSON から ${salvaged.length} 件を復元しました。`);
+    return salvaged;
+  }
+
+  console.error(
+    `[quiz] 文字列化された JSON を復元できません。長さ=${trimmed.length}\n` +
+      `  先頭=${trimmed.slice(0, 120)}\n  末尾=${trimmed.slice(-120)}`,
+  );
+  return value;
+}
+
+/**
+ * tool use の入力で、あるキーの値に後続のキーまで巻き込んで文字列化するモデルがある。
+ * 例: { questions: '[{...}],"title":"三角関数"}' のように、questions の値が
+ * オブジェクトの残り全部を含んでしまう。この形はキー名を付け直せば元に戻せる。
+ * 直さないと questions が配列にならないうえ、巻き込まれた title も失われる。
+ */
+function repairSwallowedObject(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const source = value as Record<string, unknown>;
+
+  for (const [key, raw] of Object.entries(source)) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = stripFence(raw.trim());
+    // 巻き込まれた場合だけ、値の末尾がオブジェクトの閉じ括弧になる。
+    if (!trimmed.endsWith('}')) continue;
+    if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) continue;
+
+    const restored = tryParseJson(`{${JSON.stringify(key)}:${trimmed}`);
+    if (!restored) continue;
+    const recovered = restored.value;
+    if (recovered === null || typeof recovered !== 'object' || Array.isArray(recovered)) continue;
+
+    // 巻き込まれたキーが実際に増えたときだけ差し替える。
+    const extra = Object.keys(recovered).filter((k) => !(k in source));
+    if (extra.length === 0) continue;
+
+    console.warn(`[quiz] ${key} に巻き込まれていたキーを復元しました: ${extra.join(', ')}`);
+    return { ...source, ...recovered };
+  }
+  return value;
 }
 
 const looseArray = <T extends z.ZodTypeAny>(item: T, minItems = 0) =>
@@ -156,12 +297,116 @@ const rawQuestionSchema = z.object({
   sourceQuote: z.string().trim().optional(),
 });
 
-const rawQuizSchema = z.object({
-  title: z.string().trim().min(1).catch('生成されたクイズ'),
-  questions: looseArray(z.unknown()),
-});
+// title はここでは検証せず、後段で整形と代替を当てる。
+// 見出しが気に入らないだけで生成全体を失敗させたくない。
+const rawQuizSchema = z.preprocess(
+  repairSwallowedObject,
+  z.object({
+    title: z.unknown(),
+    questions: looseArray(z.unknown()),
+  }),
+);
 
 type RawQuestion = z.infer<typeof rawQuestionSchema>;
+
+/* ---------- タイトル ---------- */
+
+/** quizTitleSchema（改名時の上限）と揃える。 */
+const TITLE_MAX = 120;
+
+const TITLE_WRAPPERS: [string, string][] = [
+  ['「', '」'],
+  ['『', '』'],
+  ['【', '】'],
+  ['"', '"'],
+  ['“', '”'],
+  ["'", "'"],
+];
+
+/**
+ * モデルの見出しには前置きや飾りが混ざることがある。表示に使える形へ整える。
+ * 整えても中身が無ければ空文字を返し、呼び出し側で代替を当てる。
+ */
+function cleanTitle(value: unknown): string {
+  if (typeof value !== 'string') return '';
+
+  // 改行が入っていたら1行目だけを見出しにする。
+  let title = stripFence(value.trim()).split(/\r?\n/)[0]?.trim() ?? '';
+  // 強調記号を落とす。
+  title = title.replace(/\*\*/g, '').replace(/^#+\s*/, '').trim();
+  // 「タイトル: 〇〇」のような前置きを外す。
+  title = title.replace(/^(?:タイトル|題名|見出し|title)\s*[:：]\s*/i, '').trim();
+
+  // 全体を囲っているだけの括弧や引用符を外す。
+  // 「あ」と「い」の違い のように内側で閉じている場合は触らない。
+  for (const [open, close] of TITLE_WRAPPERS) {
+    if (!title.startsWith(open) || !title.endsWith(close)) continue;
+    if (title.length <= open.length + close.length) continue;
+    const inner = title.slice(open.length, -close.length);
+    if (inner.includes(close)) continue;
+    title = inner.trim();
+    break;
+  }
+
+  // 末尾の句点や区切り記号は見出しに不要。
+  title = title.replace(/[。．.、,:：;；\s]+$/, '').trim();
+
+  if (title.length <= TITLE_MAX) return title;
+  return `${title.slice(0, TITLE_MAX - 1).trim()}…`;
+}
+
+/** 見出しとして意味を持たない語だけのものは、付いていないものとして扱う。 */
+const USELESS_TITLES = new Set([
+  'クイズ',
+  'テスト',
+  '問題',
+  '練習問題',
+  '確認テスト',
+  '小テスト',
+  '無題',
+  'quiz',
+  'test',
+  'questions',
+  'untitled',
+  'material 1',
+]);
+
+function isUsableTitle(title: string): boolean {
+  if (title.length === 0) return false;
+  return !USELESS_TITLES.has(title.toLowerCase());
+}
+
+/**
+ * モデルが使える見出しを返さなかったときの代替。
+ * 汎用の文言より、資料のファイル名や本文の書き出しのほうが手掛かりになる。
+ */
+function fallbackTitle(request: GenerateRequest): string {
+  const fileName = request.files[0]?.name;
+  if (fileName) {
+    // 拡張子を外す。名前が拡張子だけの場合は落とさない。
+    const base = fileName.replace(/\.[^.\s]+$/, '').trim() || fileName.trim();
+    if (base) return cleanTitle(base) || base.slice(0, TITLE_MAX);
+  }
+
+  const firstLine = request.text
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstLine) return cleanTitle(firstLine) || firstLine.slice(0, TITLE_MAX);
+
+  return '無題のクイズ';
+}
+
+function resolveTitle(raw: unknown, request: GenerateRequest): string {
+  const cleaned = cleanTitle(raw);
+  if (isUsableTitle(cleaned)) return cleaned;
+
+  const fallback = fallbackTitle(request);
+  console.warn(
+    `[quiz] 使えるタイトルが得られなかったため代替を使います（モデルの値: ${JSON.stringify(raw)?.slice(0, 80) ?? 'なし'} → ${fallback}）`,
+  );
+  return fallback;
+}
 
 /**
  * 正解位置の偏りをモデル任せにしないため、選択肢をサーバ側でシャッフルする。
@@ -188,6 +433,24 @@ function validChoices(choices: string[]): boolean {
 /** 捨てた理由を集めて、なぜ問題数が減ったのか分かるようにする。 */
 interface DropLog {
   reasons: string[];
+}
+
+/**
+ * 復元にも失敗した出力を記録する。同じ壊れ方が続くならプロンプトかモデルの問題なので、
+ * 形と先頭だけは残して追えるようにする。資料の中身は載せない。
+ */
+function logUnreadableOutput(raw: unknown, reason?: string): void {
+  const shape =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? Object.entries(raw as Record<string, unknown>)
+          .map(([key, value]) => `${key}:${Array.isArray(value) ? 'array' : typeof value}`)
+          .join(', ')
+      : typeof raw;
+
+  console.error(
+    `[quiz] モデルの出力を解釈できません（${reason ?? '理由不明'}）\n` +
+      `  形=${shape}\n  先頭=${JSON.stringify(raw)?.slice(0, 300) ?? 'なし'}`,
+  );
 }
 
 function normalizeQuestion(raw: RawQuestion, drops?: DropLog): Question | null {
@@ -310,12 +573,16 @@ export async function generateReplacement(
     temperature: 0.8,
   });
 
-  const parsed = rawQuizSchema.parse(raw);
-  const question = parsed.questions
-    .map((item) => rawQuestionSchema.safeParse(item))
-    .flatMap((result) => (result.success ? [result.data] : []))
-    .map((item) => normalizeQuestion(item))
-    .find((q): q is Question => q !== null && q.type === target.type);
+  const parsed = rawQuizSchema.safeParse(raw);
+  const question = !parsed.success
+    ? undefined
+    : parsed.data.questions
+        .map((item) => rawQuestionSchema.safeParse(item))
+        .flatMap((result) => (result.success ? [result.data] : []))
+        .map((item) => normalizeQuestion(item))
+        .find((q): q is Question => q !== null && q.type === target.type);
+
+  if (!parsed.success) logUnreadableOutput(raw, parsed.error.issues[0]?.message);
 
   if (!question) {
     throw Object.assign(
@@ -373,7 +640,14 @@ async function topUpQuestions(
     temperature: 0.8,
   });
 
-  return { items: rawQuizSchema.parse(data).questions, usage };
+  // 補充が読めなくても本体の結果は返したいので、ここでは投げない。
+  // 消費したトークンは呼び出し側で課金に足せるよう usage を返す。
+  const parsed = rawQuizSchema.safeParse(data);
+  if (!parsed.success) {
+    logUnreadableOutput(data, parsed.error.issues[0]?.message);
+    return { items: [], usage };
+  }
+  return { items: parsed.data.questions, usage };
 }
 
 export async function generateQuiz(
@@ -398,7 +672,16 @@ export async function generateQuiz(
   });
 
   const drops: DropLog = { reasons: [] };
-  const parsed = rawQuizSchema.parse(raw);
+
+  const parsed = rawQuizSchema.safeParse(raw);
+  if (!parsed.success) {
+    logUnreadableOutput(raw, parsed.error.issues[0]?.message);
+    // Zod の英語の詳細をそのまま利用者に見せないよう、原因の分かる文言に置き換える。
+    throw Object.assign(
+      new Error('モデルの出力を解釈できませんでした。もう一度試してください。'),
+      { status: 502 },
+    );
+  }
 
   const collect = (items: unknown[]): Question[] =>
     items
@@ -412,7 +695,7 @@ export async function generateQuiz(
       })
       .flatMap((q) => (q ? [q] : []));
 
-  const questions = collect(parsed.questions);
+  const questions = collect(parsed.data.questions);
 
   if (questions.length === 0) {
     throw new Error(
@@ -448,7 +731,7 @@ export async function generateQuiz(
   return {
     quiz: {
       id: randomUUID(),
-      title: parsed.title,
+      title: resolveTitle(parsed.data.title, request),
       createdAt: new Date().toISOString(),
       config,
       sourceNames: files.map((f) => f.name),

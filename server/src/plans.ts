@@ -76,9 +76,14 @@ export async function getPlanForUser(userId: string, role?: string): Promise<Pla
   );
 }
 
+/** 割り当て前の存在確認。無いプランを入れると外部キー違反で 500 になるため。 */
+export async function planExists(planId: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>('SELECT id FROM plans WHERE id = $1', [planId]);
+  return Boolean(row);
+}
+
 export async function setUserPlan(userId: string, planId: string): Promise<boolean> {
-  const exists = await queryOne<{ id: string }>('SELECT id FROM plans WHERE id = $1', [planId]);
-  if (!exists) return false;
+  if (!(await planExists(planId))) return false;
   const rows = await query<{ id: string }>(
     'UPDATE users SET plan_id = $2 WHERE id = $1 RETURNING id',
     [userId, planId],

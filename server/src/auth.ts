@@ -281,7 +281,15 @@ export function checkSignupCode(code: string | undefined): void {
   if (code !== SIGNUP_CODE) throw new AuthError('招待コードが違います', 403);
 }
 
-export async function createUser(username: string, password: string): Promise<UserRow> {
+/**
+ * ユーザーを1件作る。招待コードによる自己登録と、管理画面からの作成の両方で使う。
+ * planId を渡すと作成と同時に割り当てる（呼び出し側で存在確認しておくこと）。
+ */
+export async function createUser(
+  username: string,
+  password: string,
+  options: { planId?: string } = {},
+): Promise<UserRow> {
   // 管理者アカウント名での登録は禁止（乗っ取り防止）。
   if (isAdminUsername(username)) {
     throw new AuthError('そのユーザー名は使えません', 409);
@@ -295,14 +303,18 @@ export async function createUser(username: string, password: string): Promise<Us
 
   const id = randomUUID();
   const passwordHash = await hashPassword(password);
-  // 管理権限はユーザー属性ではなく ADMIN_PASSWORD による解錠で与えるため、
-  // 登録されるユーザーは常に一般ユーザー。
+  // 管理権限はユーザー属性ではなく .env の ADMIN_USERNAME / ADMIN_PASSWORD で与えるため、
+  // どの経路で作られたユーザーも常に一般ユーザー。管理画面から管理者は増やせない。
   await query('INSERT INTO users (id, username, password_hash, role) VALUES ($1, $2, $3, $4)', [
     id,
     username,
     passwordHash,
     'user',
   ]);
+  // プランは既定値で入るので、指定があるときだけ上書きする。
+  if (options.planId) {
+    await query('UPDATE users SET plan_id = $2 WHERE id = $1', [id, options.planId]);
+  }
   return { id, username, role: 'user' };
 }
 

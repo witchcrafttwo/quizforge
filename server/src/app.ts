@@ -34,6 +34,7 @@ import * as modelConfig from './modelConfig.js';
 import * as plans from './plans.js';
 import * as sharing from './sharing.js';
 import {
+  adminCreateUserSchema,
   credentialsSchema,
   folderNameSchema,
   generateRequestSchema,
@@ -717,6 +718,27 @@ export function createApp() {
     }),
   );
 
+  /**
+   * 管理者がアカウントを作る。招待コードを配らずに用意できるようにするため。
+   * 作られるのは常に一般ユーザーで、ここから管理者は増やせない（createUser 側で固定）。
+   */
+  app.post(
+    '/api/admin/users',
+    requireAdmin,
+    wrap(async (req, res) => {
+      const { username, password, planId } = adminCreateUserSchema.parse(req.body);
+
+      // 先に確かめる。作ってから失敗すると、プランだけ既定値のユーザーが残る。
+      if (planId && !(await plans.planExists(planId))) {
+        res.status(400).json({ error: 'プランが見つかりません' });
+        return;
+      }
+
+      const user = await createUser(username, password, { planId });
+      res.status(201).json({ user });
+    }),
+  );
+
   app.post(
     '/api/admin/users/:id/disabled',
     requireAdmin,
@@ -896,6 +918,14 @@ export function createApp() {
     }
     if (name === 'ThrottlingException') {
       res.status(429).json({ error: 'Bedrock がスロットリングしています。少し待って再試行してください。' });
+      return;
+    }
+    // 通常は bedrock.ts が再試行と代替モデルを試した後に文言付きの 503 を投げるので
+    // ここには来ない。素通しした場合に生の英文が出ないよう受け止めておく。
+    if (name === 'ServiceUnavailableException') {
+      res.status(503).json({
+        error: 'Bedrock が混み合っていて応答しません。少し待ってから再試行してください。',
+      });
       return;
     }
     if (name === 'ValidationException') {

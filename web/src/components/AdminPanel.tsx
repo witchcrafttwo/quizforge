@@ -31,6 +31,20 @@ const ROLE_NOTE: Record<api.ModelRole, string> = {
   explainer: '平文で返すだけなので、ほとんどのモデルで動く。',
 };
 
+/** 手渡し用の初期パスワードに使う文字。0/O と 1/l/I は読み違えるので入れない。 */
+const PASSWORD_ALPHABET = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generatePassword(length = 14): string {
+  const values = new Uint32Array(length);
+  crypto.getRandomValues(values);
+  return Array.from(values, (n) => PASSWORD_ALPHABET[n % PASSWORD_ALPHABET.length]).join('');
+}
+
+/** サーバ側の credentialsSchema と揃える。 */
+const USERNAME_PATTERN = /^[\w.\-@]+$/;
+const MIN_USERNAME = 2;
+const MIN_PASSWORD = 8;
+
 function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
@@ -194,6 +208,12 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
   const [newGroup, setNewGroup] = useState('');
   const [target, setTarget] = useState('');
   const [audience, setAudience] = useState('');
+  const [draftUser, setDraftUser] = useState({ username: '', password: '', planId: '' });
+  const [revealPassword, setRevealPassword] = useState(false);
+  const [creating, setCreating] = useState(false);
+  // 作成直後の1回だけ、手渡し用に平文で見せる。
+  const [issued, setIssued] = useState<{ username: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -231,6 +251,33 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const username = draftUser.username.trim();
+  const usernameValid = username.length >= MIN_USERNAME && USERNAME_PATTERN.test(username);
+  const canCreate = usernameValid && draftUser.password.length >= MIN_PASSWORD && !creating;
+
+  const createUser = async () => {
+    if (!canCreate) return;
+    setCreating(true);
+    setError(null);
+    setCopied(false);
+    try {
+      await api.adminCreateUser({
+        username,
+        password: draftUser.password,
+        planId: draftUser.planId || undefined,
+      });
+      setIssued({ username, password: draftUser.password });
+      // プランの選択は次の作成でも使い回せるよう残す。
+      setDraftUser({ username: '', password: '', planId: draftUser.planId });
+      setRevealPassword(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -654,6 +701,134 @@ export default function AdminPanel({ currentUserId, onClose }: Props) {
               }}
             />
           ))}
+        </section>
+      )}
+
+      {adminTab === 'users' && (
+        <section className="card">
+          <h2 className="tight">アカウントを作る</h2>
+          <p className="subtle">
+            招待コードを配らずに、ここで直接アカウントを用意できます。作られるのは一般
+            ユーザーです（管理者は .env の <code>ADMIN_USERNAME</code> だけ）。
+          </p>
+
+          <div className="card nested">
+            <div className="grid-2">
+              <div>
+                <label htmlFor="new-username">ユーザー名</label>
+                <input
+                  id="new-username"
+                  type="text"
+                  autoComplete="off"
+                  value={draftUser.username}
+                  placeholder="例: tanaka"
+                  aria-describedby="new-username-hint"
+                  aria-invalid={draftUser.username.length > 0 && !usernameValid}
+                  onChange={(event) =>
+                    setDraftUser({ ...draftUser, username: event.target.value })
+                  }
+                />
+                <p className="stat" id="new-username-hint">
+                  2〜32文字。英数字と . - _ @ が使えます。
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="new-plan">プラン</label>
+                <select
+                  id="new-plan"
+                  value={draftUser.planId}
+                  onChange={(event) => setDraftUser({ ...draftUser, planId: event.target.value })}
+                >
+                  <option value="">既定のまま</option>
+                  {(overview?.plans ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="stat">あとから一覧でも変更できます。</p>
+              </div>
+            </div>
+
+            <label htmlFor="new-password">初期パスワード</label>
+            <div className="row tight">
+              <input
+                id="new-password"
+                type={revealPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={draftUser.password}
+                style={{ flex: '1 1 12rem' }}
+                aria-describedby="new-password-hint"
+                onChange={(event) => setDraftUser({ ...draftUser, password: event.target.value })}
+              />
+              <button
+                type="button"
+                className="ghost"
+                aria-pressed={revealPassword}
+                onClick={() => setRevealPassword(!revealPassword)}
+              >
+                {revealPassword ? '隠す' : '表示'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftUser({ ...draftUser, password: generatePassword() });
+                  setRevealPassword(true);
+                }}
+              >
+                自動生成
+              </button>
+            </div>
+            <p className="stat" id="new-password-hint">
+              8文字以上。本人に渡したあと、各自で変更してもらってください。
+            </p>
+
+            <div className="actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={!canCreate}
+                onClick={() => void createUser()}
+              >
+                {creating ? '作成中' : '作成する'}
+              </button>
+            </div>
+          </div>
+
+          {issued && (
+            <div className="notice good" role="status">
+              <div>
+                <strong>{issued.username}</strong> を作成しました。次の内容を本人に渡してください。
+              </div>
+              <div className="row tight">
+                <code>
+                  {issued.username} / {issued.password}
+                </code>
+                <button
+                  type="button"
+                  className="link"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        `ユーザー名: ${issued.username}\nパスワード: ${issued.password}`,
+                      );
+                      setCopied(true);
+                    } catch {
+                      setCopied(false);
+                      setError('コピーできませんでした。手で写してください。');
+                    }
+                  }}
+                >
+                  {copied ? 'コピーしました' : 'コピー'}
+                </button>
+                <button type="button" className="link" onClick={() => setIssued(null)}>
+                  閉じる
+                </button>
+              </div>
+              <p className="stat">この表示を閉じるとパスワードは二度と確認できません。</p>
+            </div>
+          )}
         </section>
       )}
 

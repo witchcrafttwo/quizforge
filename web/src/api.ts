@@ -340,6 +340,16 @@ export const adminUsers = (days: number) =>
 export const adminSetDisabled = (id: string, disabled: boolean) =>
   post<{ disabled: boolean }>(`/api/admin/users/${id}/disabled`, { disabled });
 
+/**
+ * 管理者としてアカウントを作る。招待コードは不要。
+ * planId を省くと既定プランになる。作られるのは常に一般ユーザー。
+ */
+export const adminCreateUser = (input: {
+  username: string;
+  password: string;
+  planId?: string;
+}) => post<{ user: User }>('/api/admin/users', input).then((r) => r.user);
+
 export type ModelRole = 'generate' | 'grader' | 'explainer';
 
 export interface ModelOption {
