@@ -1,0 +1,45 @@
+# Docker のビルドコンテキストに送らないもの。
+# ここを絞らないと、動画ファイルや node_modules まで毎回転送されてビルドが遅くなる。
+
+# 依存はコンテナ内で入れ直す（Windows 向けのバイナリを持ち込まないため）
+node_modules
+**/node_modules
+
+# ビルド成果物はコンテナ内で作り直す。古い dist を混ぜない
+server/dist
+web/dist
+web/dev-dist
+*.tsbuildinfo
+
+# 秘密情報はイメージに焼かない。実行時に compose の env_file から渡す
+.env
+.env.*
+!.env.example
+
+# 履歴・エディタ設定
+.git
+.gitignore
+.vscode
+.kiro
+
+# ドキュメントと動画（イメージに不要）
+docs
+*.md
+*.mp4
+_vtmp
+
+# ログ・一時ファイル
+*.log
+tmp-*
+*.tmp
+out.txt
+err.txt
+
+# ホスト用の起動スクリプトと開発用スクリプト
+start.cmd
+start-dev.cmd
+stop.cmd
+scripts
+
+# docker/ は除外しない。
+# ビルダーによっては Dockerfile 自身がコンテキストから除かれると解決できなくなる。

@@ -1,0 +1,87 @@
+# QuizForge をサーバー用 PC で動かす構成。
+#
+# 使い方（このファイルがあるディレクトリで実行する）
+#   docker compose up -d --build    起動。コードを更新したときも同じコマンド
+#   docker compose logs -f          ログを追う
+#   docker compose ps               状態と healthy かどうかを見る
+#   docker compose down             停止
+#
+# ★ 同時に 1 つだけ動かすこと ★
+#   起動時に「running のまま残ったジョブを失敗扱いにして queued を拾い直す」
+#   復帰処理が走る（server/src/jobs.ts の recoverJobs）。
+#   ホスト側の start.cmd と二重に起動すると、進行中の生成が巻き込まれて失敗する。
+#   コンテナへ移すなら、先にホスト側を止めること。
+
+name: quizforge
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: quizforge:latest
+    restart: unless-stopped
+
+    # 設定と認証情報はリポジトリ直下の .env から読む。
+    # イメージには焼かず、環境変数として渡す（.dockerignore で .env は除外済み）。
+    env_file:
+      - ../.env
+
+    # cloudflared はホスト側で動いているので、ホストのループバックにだけ公開する。
+    # "8787:8787" と書くと LAN からも見えてしまうので 127.0.0.1 を明示する。
+    ports:
+      - "127.0.0.1:8787:8787"
+
+    # DATABASE_URL の宛先について
+    #   Tailscale の IP（100.x.x.x）やホスト名ならそのままコンテナから届く。
+    #   ただし localhost / 127.0.0.1 と書くとコンテナ自身を指してしまう。
+    #   ホスト上の Postgres に繋ぐ場合は host.docker.internal に書き換える。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # 資料は base64 でメモリに載る。.env の MAX_BODY_SIZE=96mb に対して余裕を取る。
+    # 足りないとコンテナが OOM で落ちるので、下げるときは実際の資料サイズで確認する。
+    mem_limit: 2g
+
+    # ログでディスクを埋めない。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ------------------------------------------------------------------
+  # Postgres も Docker に寄せたい場合だけ使う。
+  #
+  #   docker compose --profile with-db up -d
+  #
+  # ★ 注意 ★ これは空のデータベースを作る。既存の Postgres に入っている
+  #   ユーザーやクイズは入っていない。移行するなら pg_dump で移すこと。
+  #   使う場合は .env の DATABASE_URL を次のように変える。
+  #     DATABASE_URL=postgres://quizforge:<パスワード>@db:5432/quizforge
+  # ------------------------------------------------------------------
+  db:
+    profiles: ["with-db"]
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quizforge
+      POSTGRES_DB: quizforge
+      # docker/.env に POSTGRES_PASSWORD=... を書いて使う。
+      # ここで ${VAR:?...} の必須記法は使えない。compose はプロファイルで無効な
+      # サービスも含めて先に全体を補間するため、db を使わない通常起動まで失敗する。
+      # 未設定なら空になり、Postgres 自身が起動を拒否して理由を出す。
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # ホストからバックアップを取れるようにループバックにだけ出す。
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quizforge -d quizforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
